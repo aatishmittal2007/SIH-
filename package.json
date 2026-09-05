@@ -1,0 +1,13 @@
+{
+  "name": "tracex-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TRACE-X AI-Powered Criminal Network & Investigation Intelligence System Monorepo",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:ai": "cd ai-service && ./venv/bin/python main.py",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  }
+}

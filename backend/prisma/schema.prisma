@@ -1,0 +1,633 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum UserRole {
+  ADMIN
+  INVESTIGATOR
+  ANALYST
+}
+
+enum CaseStatus {
+  OPEN
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum CasePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SourceType {
+  POLICE_REPORT
+  CDR
+  FINANCIAL_RECORD
+  OSINT
+  SOCIAL_MEDIA
+  GIS
+  THREAT_INTELLIGENCE
+  DARK_WEB
+  OTHER
+}
+
+enum SourceReliability {
+  HIGH
+  MEDIUM
+  LOW
+  UNVERIFIED
+}
+
+enum EvidenceType {
+  DOCUMENT
+  IMAGE
+  VIDEO
+  AUDIO
+  REPORT
+  TRANSACTION
+  LOG
+  OTHER
+}
+
+enum EntityType {
+  PERSON
+  ORGANIZATION
+  PHONE
+  EMAIL
+  USERNAME
+  IP_ADDRESS
+  DOMAIN
+  URL
+  DEVICE
+  LOCATION
+  ACCOUNT
+  TRANSACTION
+  OTHER
+}
+
+enum ExtractionMethod {
+  MANUAL
+  RULE
+  NER
+  LLM
+  IMPORT
+}
+
+enum CaseEntityRole {
+  SUBJECT
+  VICTIM
+  WITNESS
+  CONTACT
+  LOCATION
+  ACCOUNT
+  DEVICE
+  OTHER
+}
+
+enum EventType {
+  COMMUNICATION
+  TRANSACTION
+  LOGIN
+  TRAVEL
+  MEETING
+  INCIDENT
+  LOCATION_CHANGE
+  OTHER
+}
+
+enum FeedbackAction {
+  CONFIRM
+  REJECT
+  FLAG
+  MODIFY
+}
+
+enum AlertType {
+  NEW_CONNECTION
+  CONTRADICTION
+  ANOMALY
+  HIGH_RISK
+  SYSTEM
+}
+
+enum SeverityLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
+enum MatchType {
+  EXACT
+  FUZZY
+  CONTEXTUAL
+  POSSIBLE
+}
+
+enum MatchStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+enum ContradictionStatus {
+  ACTIVE
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+// ==========================================
+// MODELS
+// ==========================================
+
+model User {
+  id           String     @id @default(uuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         UserRole   @default(INVESTIGATOR)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  createdCases          Case[]                 @relation("CaseCreatedBy")
+  generatedReports      Report[]               @relation("ReportGeneratedBy")
+  reviewedEntityMatches EntityMatch[]          @relation("MatchReviewedBy")
+  feedbacks             InvestigatorFeedback[]
+  auditLogs             AuditLog[]
+  caseAssignments       CaseAssignment[]       @relation("UserCaseAssignments")
+  assignedCases         CaseAssignment[]       @relation("AssignedByCases")
+  resolvedAlerts        Alert[]                @relation("AlertResolvedBy")
+}
+
+model Case {
+  id          String       @id @default(uuid())
+  caseNumber  String       @unique
+  title       String
+  description String?      @db.Text
+  status      CaseStatus   @default(OPEN)
+  priority    CasePriority @default(MEDIUM)
+  createdById String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  createdBy   User                   @relation("CaseCreatedBy", fields: [createdById], references: [id])
+  evidence    Evidence[]
+  mentions    EntityMention[]
+  caseEntities CaseEntity[]
+  events      Event[]
+  feedbacks   InvestigatorFeedback[]
+  alerts      Alert[]
+  reports     Report[]
+  contradictions Contradiction[]
+  assignments CaseAssignment[]
+  correlationsSource CaseCorrelation[] @relation("CorrelationSourceCase")
+  correlationsTarget CaseCorrelation[] @relation("CorrelationTargetCase")
+  patterns    DetectedPattern[]
+  findings    IntelligenceFinding[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+}
+
+model CaseAssignment {
+  id           String   @id @default(uuid())
+  caseId       String
+  userId       String
+  assignedById String?
+  assignedAt   DateTime @default(now())
+
+  case       Case  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user       User  @relation("UserCaseAssignments", fields: [userId], references: [id], onDelete: Cascade)
+  assignedBy User? @relation("AssignedByCases", fields: [assignedById], references: [id])
+
+  @@unique([caseId, userId])
+  @@index([caseId])
+  @@index([userId])
+}
+
+model Source {
+  id          String            @id @default(uuid())
+  name        String
+  type        SourceType        @default(POLICE_REPORT)
+  reliability SourceReliability @default(UNVERIFIED)
+  description String?           @db.Text
+  createdAt   DateTime          @default(now())
+
+  evidence Evidence[]
+  events   Event[]
+}
+
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  UNSUPPORTED
+  OCR_REQUIRED
+}
+
+model Evidence {
+  id                    String           @id @default(uuid())
+  caseId                String
+  type                  EvidenceType     @default(DOCUMENT)
+  title                 String
+  description           String?          @db.Text
+  fileName              String
+  storagePath           String
+  mimeType              String
+  hash                  String?
+  sourceId              String?
+  processingStatus      ProcessingStatus @default(PENDING)
+  processingStartedAt   DateTime?
+  processingCompletedAt DateTime?
+  processingError       String?          @db.Text
+  textExtractionStatus  String?
+  nlpStatus             String?
+  collectedAt           DateTime         @default(now())
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  case                Case                 @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  source              Source?              @relation(fields: [sourceId], references: [id])
+  entityMentions      EntityMention[]
+  contradictionClaims ContradictionClaim[]
+  document            EvidenceDocument?
+  chunks              EvidenceChunk[]
+
+  @@index([caseId])
+  @@index([type])
+  @@index([sourceId])
+  @@index([processingStatus])
+}
+
+model EvidenceDocument {
+  id                String   @id @default(uuid())
+  evidenceId        String   @unique
+  originalText      String   @db.Text
+  normalizedText    String   @db.Text
+  pageCount         Int      @default(1)
+  characterCount    Int
+  wordCount         Int
+  language          String   @default("en")
+  extractionMethod  String   @default("AUTO")
+  extractionVersion String   @default("1.0")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  evidence Evidence        @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  chunks   EvidenceChunk[]
+
+  @@index([evidenceId])
+}
+
+model EvidenceChunk {
+  id          String   @id @default(uuid())
+  documentId  String
+  evidenceId  String
+  chunkIndex  Int
+  text        String   @db.Text
+  startOffset Int
+  endOffset   Int
+  pageNumber  Int?
+  createdAt   DateTime @default(now())
+
+  document       EvidenceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  evidence       Evidence         @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  entityMentions EntityMention[]
+
+  @@index([evidenceId])
+  @@index([documentId])
+  @@index([chunkIndex])
+}
+
+model Entity {
+  id              String     @id @default(uuid())
+  type            EntityType
+  canonicalValue  String
+  displayName     String
+  normalizedValue String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  mentions            EntityMention[]
+  caseEntities        CaseEntity[]
+  locations           Location[]
+  alerts              Alert[]
+  contradictionClaims ContradictionClaim[]
+  sourceMatches       EntityMatch[]        @relation("SourceEntityMatches")
+  targetMatches       EntityMatch[]        @relation("TargetEntityMatches")
+  eventLocations      Event[]              @relation("EventLocationEntity")
+  patterns            DetectedPattern[]
+
+  @@index([normalizedValue])
+  @@index([type])
+  @@index([canonicalValue])
+}
+
+model EntityMention {
+  id                   String           @id @default(uuid())
+  entityId             String
+  evidenceId           String
+  caseId               String
+  chunkId              String?
+  originalText         String
+  context              String?          @db.Text
+  extractionMethod     ExtractionMethod @default(MANUAL)
+  extractionConfidence Float            @default(1.0)
+  startOffset          Int?
+  endOffset            Int?
+  createdAt            DateTime         @default(now())
+
+  entity   Entity         @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  evidence Evidence       @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  case     Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  chunk    EvidenceChunk? @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+
+  @@index([entityId])
+  @@index([evidenceId])
+  @@index([caseId])
+  @@index([chunkId])
+}
+
+model CaseEntity {
+  id          String         @id @default(uuid())
+  caseId      String
+  entityId    String
+  role        CaseEntityRole @default(OTHER)
+  confidence  Float          @default(1.0)
+  firstSeenAt DateTime?
+  lastSeenAt  DateTime?
+  createdAt   DateTime       @default(now())
+
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, entityId, role])
+  @@index([caseId])
+  @@index([entityId])
+}
+
+model Event {
+  id               String    @id @default(uuid())
+  caseId           String
+  type             EventType @default(INCIDENT)
+  description      String    @db.Text
+  timestamp        DateTime
+  endTimestamp     DateTime?
+  locationEntityId String?
+  sourceId         String?
+  confidence       Float     @default(1.0)
+  createdAt        DateTime  @default(now())
+
+  case           Case    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  source         Source? @relation(fields: [sourceId], references: [id])
+  locationEntity Entity? @relation("EventLocationEntity", fields: [locationEntityId], references: [id])
+
+  @@index([caseId])
+  @@index([timestamp])
+  @@index([type])
+}
+
+model Location {
+  id        String   @id @default(uuid())
+  entityId  String
+  latitude  Float
+  longitude Float
+  address   String?
+  city      String?
+  state     String?
+  country   String?
+  createdAt DateTime @default(now())
+
+  entity Entity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@index([entityId])
+}
+
+model EntityMatch {
+  id              String      @id @default(uuid())
+  sourceEntityId  String
+  targetEntityId  String
+  matchType       MatchType   @default(POSSIBLE)
+  similarityScore Float
+  reason          String      @db.Text
+  reviewComment   String?     @db.Text
+  metadata        Json?
+  status          MatchStatus @default(PENDING)
+  createdAt       DateTime    @default(now())
+  reviewedById    String?
+  reviewedAt      DateTime?
+
+  sourceEntity Entity @relation("SourceEntityMatches", fields: [sourceEntityId], references: [id], onDelete: Cascade)
+  targetEntity Entity @relation("TargetEntityMatches", fields: [targetEntityId], references: [id], onDelete: Cascade)
+  reviewedBy   User?   @relation("MatchReviewedBy", fields: [reviewedById], references: [id])
+
+  @@unique([sourceEntityId, targetEntityId])
+  @@index([sourceEntityId])
+  @@index([targetEntityId])
+  @@index([status])
+}
+
+model Contradiction {
+  id          String              @id @default(uuid())
+  caseId      String
+  type        String
+  description String              @db.Text
+  severity    SeverityLevel       @default(MEDIUM)
+  status      ContradictionStatus @default(ACTIVE)
+  createdAt   DateTime            @default(now())
+  resolvedAt  DateTime?
+
+  case   Case                 @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  claims ContradictionClaim[]
+
+  @@index([caseId])
+  @@index([status])
+}
+
+model ContradictionClaim {
+  id              String   @id @default(uuid())
+  contradictionId String
+  evidenceId      String?
+  entityId        String?
+  claimText       String   @db.Text
+  value           String
+  timestamp       DateTime
+  createdAt       DateTime @default(now())
+
+  contradiction Contradiction @relation(fields: [contradictionId], references: [id], onDelete: Cascade)
+  evidence      Evidence?      @relation(fields: [evidenceId], references: [id])
+  entity        Entity?        @relation(fields: [entityId], references: [id])
+
+  @@index([contradictionId])
+}
+
+model InvestigatorFeedback {
+  id         String         @id @default(uuid())
+  userId     String
+  caseId     String
+  targetType String
+  targetId   String
+  action     FeedbackAction
+  comment    String?        @db.Text
+  createdAt  DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@index([userId])
+}
+
+model Alert {
+  id                 String        @id @default(uuid())
+  type               AlertType
+  severity           SeverityLevel @default(MEDIUM)
+  title              String
+  description        String        @db.Text
+  caseId             String?
+  entityId           String?
+  sourceSignal       Json?
+  status             AlertStatus   @default(ACTIVE)
+  resolutionComment  String?       @db.Text
+  resolutionMetadata Json?
+  resolvedById       String?
+  createdAt          DateTime      @default(now())
+  resolvedAt         DateTime?
+
+  case       Case?   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  entity     Entity? @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  resolvedBy User?   @relation("AlertResolvedBy", fields: [resolvedById], references: [id])
+
+  @@index([status])
+  @@index([caseId])
+  @@index([entityId])
+  @@index([type])
+  @@index([severity])
+}
+
+model Report {
+  id            String   @id @default(uuid())
+  caseId        String
+  title         String
+  type          String   @default("CASE_INVESTIGATION")
+  generatedById String
+  filePath      String?
+  content       Json?
+  format        String   @default("JSON")
+  createdAt     DateTime @default(now())
+
+  case        Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  generatedBy User @relation("ReportGeneratedBy", fields: [generatedById], references: [id])
+
+  @@index([caseId])
+  @@index([generatedById])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String?
+  action       String
+  resourceType String
+  resourceId   String?
+  metadata     Json?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([userId])
+  @@index([action])
+}
+
+model CaseCorrelation {
+  id                 String   @id @default(uuid())
+  sourceCaseId       String
+  targetCaseId       String
+  score              Float
+  confidence         Float    @default(1.0)
+  signals            Json
+  conflictingSignals Json?
+  status             String   @default("ACTIVE")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  sourceCase Case @relation("CorrelationSourceCase", fields: [sourceCaseId], references: [id], onDelete: Cascade)
+  targetCase Case @relation("CorrelationTargetCase", fields: [targetCaseId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceCaseId, targetCaseId])
+  @@index([sourceCaseId])
+  @@index([targetCaseId])
+  @@index([score])
+}
+
+model DetectedPattern {
+  id                 String        @id @default(uuid())
+  caseId             String?
+  entityId           String?
+  patternType        String
+  severity           SeverityLevel @default(MEDIUM)
+  score              Float
+  explanation        String        @db.Text
+  signals            Json
+  evidenceReferences Json
+  status             String        @default("ACTIVE")
+  detectedAt         DateTime      @default(now())
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  case   Case?   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  entity Entity? @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([entityId])
+  @@index([patternType])
+  @@index([status])
+}
+
+model IntelligenceFinding {
+  id                 String        @id @default(uuid())
+  caseId             String?
+  findingType        String
+  title              String
+  summary            String        @db.Text
+  confidence         Float         @default(1.0)
+  severity           SeverityLevel @default(MEDIUM)
+  signals            Json
+  evidenceReferences Json
+  contradictions     Json?
+  limitations        Json?
+  status             String        @default("ACTIVE")
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  case Case? @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([findingType])
+  @@index([status])
+}
+
