@@ -1,0 +1,2 @@
+contradiction_id,case_id,entity_id,type,claim_time_a,claim_a,evidence_a,claim_time_b,claim_b,description,status
+CON-001,CASE-003,ENT-002,LOCATION,2026-08-27T18:30:00Z,Bengaluru,EVD-007,2026-08-27T18:45:00Z,Mumbai,Conflicting synthetic location claims within a short interval,OPEN

@@ -12,7 +12,11 @@ import {
   X,
   Layers,
   Plus,
-  ChevronRight
+  ChevronRight,
+  Filter,
+  Eye,
+  Network,
+  Activity
 } from 'lucide-react';
 import { apiClient, unwrapData } from '../api/client';
 
@@ -41,6 +45,9 @@ interface GraphEdge {
   properties?: Record<string, any>;
 }
 
+type EdgeLabelMode = 'SMART' | 'HOVER' | 'ALL' | 'OFF';
+type LinkFilterMode = 'ALL' | 'ANALYTICAL' | 'STRUCTURAL';
+
 export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
   onSelectCase,
   userRole: _userRole = 'INVESTIGATOR',
@@ -57,7 +64,10 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
   const [selectedCaseId, setSelectedCaseId] = useState<string>(initialCaseId);
   const [selectedType, setSelectedType] = useState<string>('ALL');
   const [minConfidence, setMinConfidence] = useState<number>(0);
-  const [layoutName, setLayoutName] = useState<string>('cose');
+  const [layoutName, setLayoutName] = useState<string>('concentric');
+  const [edgeLabelMode, setEdgeLabelMode] = useState<EdgeLabelMode>('SMART');
+  const [linkFilter, setLinkFilter] = useState<LinkFilterMode>('ALL');
+  const [highlightedLegendType, setHighlightedLegendType] = useState<string | null>(null);
 
   // Graph Data
   const [graphData, setGraphData] = useState<{ nodes: GraphNode[]; edges: GraphEdge[] }>({ nodes: [], edges: [] });
@@ -69,6 +79,15 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
   const [selectedEdgeDetails, setSelectedEdgeDetails] = useState<any | null>(null);
   const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
   const [expandingNode, setExpandingNode] = useState<boolean>(false);
+
+  // Hover HUD info
+  const [hoveredNode, setHoveredNode] = useState<{
+    id: string;
+    label: string;
+    type: string;
+    degree: number;
+    value: string;
+  } | null>(null);
 
   // Pathfinding state
   const [pathSourceId, setPathSourceId] = useState<string | null>(null);
@@ -96,7 +115,19 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
     'CASE'
   ];
 
-  // Node Color Mapping
+  // Structural relationship types that form case spokes
+  const STRUCTURAL_EDGE_TYPES = new Set([
+    'INVOLVES',
+    'HAS_EVIDENCE',
+    'PART_OF',
+    'HAS_EVENT',
+    'OCCURRED_AT',
+    'RECORDED_IN'
+  ]);
+
+  const isStructuralRel = (type: string) => STRUCTURAL_EDGE_TYPES.has(type.toUpperCase());
+
+  // Node Color Mapping with High-Contrast Cyber Palette
   const getNodeColor = (type: string) => {
     switch (type.toUpperCase()) {
       case 'PERSON':
@@ -110,10 +141,10 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
       case 'USERNAME':
         return '#8b5cf6'; // Purple
       case 'IP':
-        return '#06b6d4'; // Cyan
+        return '#B026FF'; // Vibrant Magenta
       case 'DOMAIN':
       case 'URL':
-        return '#0284c7'; // Sky
+        return '#a855f7'; // Violet
       case 'DEVICE':
         return '#64748b'; // Slate
       case 'LOCATION':
@@ -124,11 +155,11 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
       case 'EVENT':
         return '#f97316'; // Orange
       case 'EVIDENCE':
-        return '#a855f7'; // Violet
+        return '#9333ea'; // Deep Violet
       case 'CASE':
-        return '#3b82f6'; // Blue
+        return '#DC2626'; // Command Crimson Red
       default:
-        return '#94a3b8'; // Muted Gray
+        return '#94a3b8'; // Muted Slate
     }
   };
 
@@ -152,13 +183,13 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const params: any = { limit: 150 };
+      const params: any = { limit: 160 };
       if (selectedCaseId) params.caseId = selectedCaseId;
       if (selectedType !== 'ALL') params.entityType = selectedType;
       if (minConfidence > 0) params.minConfidence = minConfidence;
 
       const res = await apiClient.get('/network/interactive', { params });
-      const data: any = unwrapData(res);
+      const data: any = unwrapData(res.data);
       const nodes = Array.isArray(data?.nodes) ? data.nodes : (Array.isArray(res.data?.data?.nodes) ? res.data.data.nodes : []);
       const edges = Array.isArray(data?.edges) ? data.edges : (Array.isArray(res.data?.data?.edges) ? res.data.data.edges : []);
       setGraphData({ nodes, edges });
@@ -174,29 +205,177 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
     loadGraph();
   }, [selectedCaseId, selectedType, minConfidence]);
 
+  // Layout Configuration Generator
+  const getLayoutOptions = (name: string): cytoscape.LayoutOptions => {
+    switch (name) {
+      case 'concentric':
+        return {
+          name: 'concentric',
+          animate: true,
+          animationDuration: 750,
+          padding: 60,
+          avoidOverlap: true,
+          nodeDimensionsIncludeLabels: true,
+          minNodeSpacing: 65,
+          spacingFactor: 1.35,
+          startAngle: (3 / 2) * Math.PI,
+          clockwise: true,
+          equidistant: false,
+          concentric: (node: any) => {
+            const type = (node.data('type') || '').toUpperCase();
+            if (type === 'CASE') return 5;
+            if (type === 'PERSON' || type === 'ORGANIZATION') return 4;
+            if (['PHONE', 'EMAIL', 'ACCOUNT', 'TRANSACTION', 'USERNAME'].includes(type)) return 3;
+            if (['IP', 'DOMAIN', 'URL', 'DEVICE'].includes(type)) return 2;
+            return 1; // EVIDENCE, EVENT, LOCATION
+          },
+          levelWidth: () => 1,
+        } as any;
+
+      case 'cose':
+        return {
+          name: 'cose',
+          animate: true,
+          animationDuration: 850,
+          padding: 60,
+          avoidOverlap: true,
+          nodeDimensionsIncludeLabels: true,
+          nodeRepulsion: () => 650000,
+          idealEdgeLength: (edge: any) => {
+            return edge.data('isStructural') ? 140 : 95;
+          },
+          edgeElasticity: () => 32,
+          nestingFactor: 1.2,
+          gravity: 0.15,
+          numIter: 1000,
+          initialTemp: 200,
+          coolingFactor: 0.95,
+          minTemp: 1.0,
+          nodeOverlap: 30,
+          componentSpacing: 130,
+          randomize: false,
+        } as any;
+
+      case 'breadthfirst':
+        return {
+          name: 'breadthfirst',
+          animate: true,
+          animationDuration: 650,
+          padding: 60,
+          directed: true,
+          roots: 'node[type = "CASE"]',
+          spacingFactor: 1.6,
+          avoidOverlap: true,
+          nodeDimensionsIncludeLabels: true,
+        } as any;
+
+      case 'circle':
+        return {
+          name: 'circle',
+          animate: true,
+          animationDuration: 600,
+          padding: 60,
+          avoidOverlap: true,
+          spacingFactor: 1.4,
+          nodeDimensionsIncludeLabels: true,
+        } as any;
+
+      case 'grid':
+        return {
+          name: 'grid',
+          animate: true,
+          animationDuration: 500,
+          padding: 60,
+          avoidOverlap: true,
+          nodeDimensionsIncludeLabels: true,
+        } as any;
+
+      default:
+        return {
+          name: name as any,
+          animate: true,
+          animationDuration: 500,
+          padding: 50,
+        };
+    }
+  };
+
   // Initialize and Update Cytoscape Canvas
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Convert nodes and edges to Cytoscape elements format
+    // Filter edges based on linkFilter mode
+    let visibleEdges = graphData.edges;
+    if (linkFilter === 'ANALYTICAL') {
+      visibleEdges = graphData.edges.filter((e) => !isStructuralRel(e.type));
+    } else if (linkFilter === 'STRUCTURAL') {
+      visibleEdges = graphData.edges.filter((e) => isStructuralRel(e.type));
+    }
+
+    // Compute degree map for node scaling
+    const degreeMap: Record<string, number> = {};
+    visibleEdges.forEach((edge) => {
+      if (edge.source) degreeMap[edge.source] = (degreeMap[edge.source] || 0) + 1;
+      if (edge.target) degreeMap[edge.target] = (degreeMap[edge.target] || 0) + 1;
+    });
+
     const elements: cytoscape.ElementDefinition[] = [
-      ...graphData.nodes.map((node) => ({
-        data: {
-          id: node.id,
-          label: node.displayName || node.canonicalValue || node.id,
-          type: node.type || node.label || 'Entity',
-          color: getNodeColor(node.type || node.label || ''),
-        },
-      })),
-      ...graphData.edges.map((edge) => ({
-        data: {
-          id: edge.id,
-          source: edge.source,
-          target: edge.target,
-          label: edge.type,
-          confidence: edge.confidence || 1.0,
-        },
-      })),
+      ...graphData.nodes.map((node) => {
+        const type = (node.type || node.label || 'Entity').toUpperCase();
+        const isCase = type === 'CASE';
+        const isEvidence = type === 'EVIDENCE';
+        const isEvent = type === 'EVENT';
+        const degree = degreeMap[node.id] || 0;
+
+        // Systematic node sizing
+        let nodeSize = 36;
+        if (isCase) {
+          nodeSize = 54;
+        } else if (isEvidence) {
+          nodeSize = 42;
+        } else if (isEvent) {
+          nodeSize = 38;
+        } else {
+          // Dynamic degree scaling for key suspects / entities
+          nodeSize = Math.min(50, Math.max(34, 34 + degree * 2));
+        }
+
+        return {
+          data: {
+            id: node.id,
+            label: node.displayName || node.canonicalValue || node.id,
+            canonicalValue: node.canonicalValue || node.displayName || node.id,
+            type,
+            isCase,
+            isEvidence,
+            isEvent,
+            degree,
+            nodeSize,
+            color: getNodeColor(type),
+          },
+        };
+      }),
+      ...visibleEdges.map((edge) => {
+        const edgeType = (edge.type || '').toUpperCase();
+        const isStructural = isStructuralRel(edgeType);
+        const isContradiction = edgeType === 'CONTRADICTS' || edgeType === 'ALERT';
+        const isResolved = edgeType === 'RESOLVED_TO' || edgeType === 'SAME_AS';
+        const isAnalytical = !isStructural && !isContradiction && !isResolved;
+
+        return {
+          data: {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            label: edge.type,
+            confidence: edge.confidence || 1.0,
+            isStructural,
+            isContradiction,
+            isResolved,
+            isAnalytical,
+          },
+        };
+      }),
     ];
 
     if (cyRef.current) {
@@ -207,96 +386,282 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
       container: containerRef.current,
       elements,
       style: [
+        // Base Node Style
         {
           selector: 'node',
           style: {
             'background-color': 'data(color)',
             'label': 'data(label)',
-            'color': '#f8fafc',
-            'font-size': '11px',
+            'color': '#F1F5F9',
+            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            'font-size': '10px',
             'font-weight': 600,
             'text-valign': 'bottom',
             'text-margin-y': 6,
-            'width': 36,
-            'height': 36,
+            'text-max-width': '95px',
+            'text-wrap': 'ellipsis',
+            'text-background-color': '#08070B',
+            'text-background-opacity': 0.88,
+            'text-background-padding': '3px',
+            'text-background-shape': 'roundrectangle',
+            'text-border-width': 1,
+            'text-border-color': 'rgba(139, 92, 246, 0.25)',
+            'text-border-opacity': 0.7,
+            'width': 'data(nodeSize)',
+            'height': 'data(nodeSize)',
             'border-width': 2,
-            'border-color': '#ffffff',
+            'border-color': '#FFFFFF',
+            'border-opacity': 0.8,
             'overlay-padding': '4px',
-            'transition-property': 'background-color, border-color, border-width, width, height',
-            'transition-duration': 0.2,
+            'transition-property': 'background-color, border-color, border-width, width, height, opacity',
+            'transition-duration': 0.25,
           },
         },
+        // CASE Command Hub Node
+        {
+          selector: 'node[?isCase]',
+          style: {
+            'shape': 'round-rectangle',
+            'width': 54,
+            'height': 54,
+            'background-color': '#DC2626',
+            'border-width': 3,
+            'border-color': '#EF4444',
+            'border-opacity': 0.95,
+            'font-size': '11px',
+            'font-weight': 700,
+            'color': '#FFFFFF',
+            'text-border-color': 'rgba(220, 38, 38, 0.5)',
+            'z-index': 25,
+          },
+        },
+        // EVIDENCE Document Node
+        {
+          selector: 'node[?isEvidence]',
+          style: {
+            'shape': 'round-rectangle',
+            'border-width': 2,
+            'border-color': '#C084FC',
+            'border-opacity': 0.9,
+            'z-index': 15,
+          },
+        },
+        // EVENT Node
+        {
+          selector: 'node[?isEvent]',
+          style: {
+            'shape': 'diamond',
+            'border-width': 2,
+            'border-color': '#FB923C',
+            'border-opacity': 0.9,
+          },
+        },
+        // Selected Node
         {
           selector: 'node:selected',
           style: {
             'border-width': 4,
-            'border-color': '#38bdf8',
-            'width': 44,
-            'height': 44,
+            'border-color': '#B026FF',
+            'border-opacity': 1.0,
+            'text-border-color': '#B026FF',
+            'text-border-width': 1.5,
+            'z-index': 50,
           },
         },
+        // Hovered Node
+        {
+          selector: 'node.hovered',
+          style: {
+            'border-width': 3.5,
+            'border-color': '#B026FF',
+            'border-opacity': 1.0,
+            'z-index': 40,
+          },
+        },
+
+        // Base Edge Style
         {
           selector: 'edge',
           style: {
-            'width': 2,
-            'line-color': '#475569',
-            'target-arrow-color': '#475569',
-            'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
-            'label': 'data(label)',
-            'color': '#94a3b8',
-            'font-size': '9px',
+            'control-point-step-size': 40,
+            'font-family': 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            'font-size': '8.5px',
+            'font-weight': 600,
             'text-rotation': 'autorotate',
-            'text-background-opacity': 0.8,
-            'text-background-color': '#0f172a',
+            'text-background-opacity': 0.88,
+            'text-background-color': '#08070B',
             'text-background-padding': '2px',
             'text-background-shape': 'roundrectangle',
-            'opacity': 0.8,
+            'text-border-width': 1,
+            'text-border-color': 'rgba(255, 255, 255, 0.12)',
+            'transition-property': 'line-color, target-arrow-color, width, opacity',
+            'transition-duration': 0.2,
           },
         },
+        // Structural Edges (Muted, Dashed, Thin)
+        {
+          selector: 'edge[?isStructural]',
+          style: {
+            'width': 1.5,
+            'line-style': 'dashed',
+            'line-dash-pattern': [4, 4],
+            'line-color': 'rgba(148, 163, 184, 0.35)',
+            'target-arrow-color': 'rgba(148, 163, 184, 0.45)',
+            'target-arrow-shape': 'triangle',
+            'arrow-scale': 0.75,
+            'opacity': 0.35,
+            'color': '#94A3B8',
+            'z-index': 2,
+          },
+        },
+        // Analytical / Intelligence Relationships (Vibrant Cyber Magenta)
+        {
+          selector: 'edge[?isAnalytical]',
+          style: {
+            'width': 2.5,
+            'line-style': 'solid',
+            'line-color': '#B026FF',
+            'target-arrow-color': '#B026FF',
+            'target-arrow-shape': 'triangle',
+            'arrow-scale': 0.9,
+            'opacity': 0.85,
+            'color': '#C084FC',
+            'z-index': 10,
+          },
+        },
+        // Contradiction / Conflict Links (Crimson Warning)
+        {
+          selector: 'edge[?isContradiction]',
+          style: {
+            'width': 2.5,
+            'line-style': 'dashed',
+            'line-dash-pattern': [6, 3],
+            'line-color': '#DC2626',
+            'target-arrow-color': '#DC2626',
+            'target-arrow-shape': 'triangle',
+            'arrow-scale': 0.95,
+            'opacity': 0.95,
+            'color': '#FCA5A5',
+            'z-index': 15,
+          },
+        },
+        // Resolved / Same-As Links (Emerald Green)
+        {
+          selector: 'edge[?isResolved]',
+          style: {
+            'width': 2,
+            'line-style': 'dotted',
+            'line-color': '#10B981',
+            'target-arrow-color': '#10B981',
+            'target-arrow-shape': 'triangle',
+            'arrow-scale': 0.85,
+            'opacity': 0.85,
+            'color': '#6EE7B7',
+            'z-index': 10,
+          },
+        },
+
+        // Dynamic Edge Labeling based on EdgeLabelMode
+        ...(edgeLabelMode === 'OFF'
+          ? [
+              {
+                selector: 'edge',
+                style: { 'label': '' },
+              },
+            ]
+          : edgeLabelMode === 'HOVER'
+          ? [
+              {
+                selector: 'edge',
+                style: { 'label': '' },
+              },
+              {
+                selector: 'edge.show-label, edge:selected',
+                style: { 'label': 'data(label)' },
+              },
+            ]
+          : edgeLabelMode === 'SMART'
+          ? [
+              {
+                selector: 'edge[?isStructural]',
+                style: { 'label': '' },
+              },
+              {
+                selector: 'edge[?isAnalytical], edge[?isContradiction], edge[?isResolved]',
+                style: { 'label': 'data(label)' },
+              },
+              {
+                selector: 'edge[?isStructural].show-label, edge[?isStructural]:selected',
+                style: { 'label': 'data(label)' },
+              },
+            ]
+          : [
+              // ALL mode
+              {
+                selector: 'edge',
+                style: { 'label': 'data(label)' },
+              },
+            ]),
+
+        // Selected Edge
         {
           selector: 'edge:selected',
           style: {
             'width': 4,
-            'line-color': '#38bdf8',
-            'target-arrow-color': '#38bdf8',
+            'line-color': '#B026FF',
+            'target-arrow-color': '#B026FF',
             'opacity': 1.0,
+            'label': 'data(label)',
+            'z-index': 30,
+          },
+        },
+
+        // Highlighted Neighborhood or Path
+        {
+          selector: 'node.highlighted',
+          style: {
+            'border-width': 3.5,
+            'border-color': '#B026FF',
+            'border-opacity': 1.0,
+            'opacity': 1.0,
+            'z-index': 35,
           },
         },
         {
-          selector: '.highlighted',
+          selector: 'edge.highlighted',
           style: {
-            'line-color': '#38bdf8',
-            'target-arrow-color': '#38bdf8',
             'width': 3.5,
+            'line-color': '#B026FF',
+            'target-arrow-color': '#B026FF',
             'opacity': 1.0,
+            'label': 'data(label)',
+            'z-index': 25,
           },
         },
+
+        // Dimmed Non-Neighborhood Elements
         {
-          selector: '.faded',
+          selector: '.dimmed',
           style: {
-            'opacity': 0.25,
+            'opacity': 0.12,
           },
         },
       ],
-      layout: {
-        name: layoutName as any,
-        animate: true,
-        animationDuration: 500,
-        padding: 50,
-      },
+      layout: getLayoutOptions(layoutName),
     });
 
     // Handle Node Click
-    cy.on('tap', 'node', async (evt) => {
+    cy.on('tap', 'node', (evt) => {
       const node = evt.target;
       const nodeId = node.id();
 
-      // Highlight neighbors
-      cy.elements().removeClass('highlighted faded');
+      // Highlight neighborhood
+      cy.elements().removeClass('highlighted dimmed show-label');
       const neighborhood = node.closedNeighborhood();
-      cy.elements().difference(neighborhood).addClass('faded');
+      cy.elements().difference(neighborhood).addClass('dimmed');
       neighborhood.addClass('highlighted');
+      node.connectedEdges().addClass('show-label');
 
       setSelectedNodeId(nodeId);
       setSelectedEdgeDetails(null);
@@ -304,27 +669,63 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
     });
 
     // Handle Edge Click
-    cy.on('tap', 'edge', async (evt) => {
+    cy.on('tap', 'edge', (evt) => {
       const edge = evt.target;
       const edgeData = edge.data();
 
-      cy.elements().removeClass('highlighted faded');
-      edge.addClass('highlighted');
+      cy.elements().removeClass('highlighted dimmed show-label');
+      edge.addClass('highlighted show-label');
       edge.connectedNodes().addClass('highlighted');
+      cy.elements().difference(edge.union(edge.connectedNodes())).addClass('dimmed');
 
       setSelectedNodeId(null);
       setSelectedNodeDetails(null);
       fetchEdgeDetails(edgeData.source, edgeData.target, edgeData.label);
     });
 
-    // Handle Background Click (Deselect)
+    // Handle Background Click (Deselect / Unpin)
     cy.on('tap', (evt) => {
       if (evt.target === cy) {
-        cy.elements().removeClass('highlighted faded');
+        cy.elements().removeClass('highlighted dimmed hovered show-label');
         setSelectedNodeId(null);
         setSelectedNodeDetails(null);
         setSelectedEdgeDetails(null);
+        setHoveredNode(null);
       }
+    });
+
+    // Handle Node Hover (Interactive 1-hop inspection)
+    cy.on('mouseover', 'node', (evt) => {
+      const node = evt.target;
+      const d = node.data();
+      setHoveredNode({
+        id: node.id(),
+        label: d.label,
+        type: d.type,
+        degree: d.degree || 0,
+        value: d.canonicalValue || d.label,
+      });
+
+      // If no permanent node is selected, show 1-hop focus dynamically
+      if (!selectedNodeId && !selectedEdgeDetails) {
+        cy.elements().removeClass('hovered dimmed show-label');
+        const neighborhood = node.closedNeighborhood();
+        node.addClass('hovered');
+        neighborhood.connectedEdges().addClass('show-label');
+        cy.elements().difference(neighborhood).addClass('dimmed');
+      }
+    });
+
+    cy.on('mouseout', 'node', () => {
+      setHoveredNode(null);
+      if (!selectedNodeId && !selectedEdgeDetails) {
+        cy.elements().removeClass('hovered dimmed show-label');
+      }
+    });
+
+    // Auto-fit on initial render
+    cy.ready(() => {
+      cy.fit(undefined, 50);
     });
 
     cyRef.current = cy;
@@ -332,7 +733,29 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
     return () => {
       cy.destroy();
     };
-  }, [graphData, layoutName]);
+  }, [graphData, layoutName, edgeLabelMode, linkFilter]);
+
+  // Handle Legend Type Filter / Highlight
+  const handleLegendClick = (type: string) => {
+    if (!cyRef.current) return;
+    const cy = cyRef.current;
+
+    if (highlightedLegendType === type) {
+      // Clear highlight
+      setHighlightedLegendType(null);
+      cy.elements().removeClass('highlighted dimmed');
+      return;
+    }
+
+    setHighlightedLegendType(type);
+    cy.elements().removeClass('highlighted dimmed');
+
+    const matchingNodes = cy.nodes().filter((n) => (n.data('type') || '').toUpperCase() === type.toUpperCase());
+    if (matchingNodes.length > 0) {
+      cy.elements().difference(matchingNodes).addClass('dimmed');
+      matchingNodes.addClass('highlighted');
+    }
+  };
 
   // Fetch detailed metadata for selected node
   const fetchNodeDetails = async (nodeId: string) => {
@@ -382,13 +805,24 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
 
         newNodes.forEach((node: GraphNode) => {
           if (cy.getElementById(node.id).length === 0) {
+            const type = (node.type || node.label || 'Entity').toUpperCase();
+            const isCase = type === 'CASE';
+            const isEvidence = type === 'EVIDENCE';
+            const isEvent = type === 'EVENT';
+
             cy.add({
               group: 'nodes',
               data: {
                 id: node.id,
                 label: node.displayName || node.canonicalValue || node.id,
-                type: node.type || node.label || 'Entity',
-                color: getNodeColor(node.type || node.label || ''),
+                canonicalValue: node.canonicalValue || node.displayName || node.id,
+                type,
+                isCase,
+                isEvidence,
+                isEvent,
+                degree: 1,
+                nodeSize: isCase ? 54 : isEvidence ? 42 : isEvent ? 38 : 36,
+                color: getNodeColor(type),
               },
             });
           }
@@ -396,6 +830,11 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
 
         newEdges.forEach((edge: GraphEdge) => {
           if (cy.getElementById(edge.id).length === 0) {
+            const edgeType = (edge.type || '').toUpperCase();
+            const isStructural = isStructuralRel(edgeType);
+            const isContradiction = edgeType === 'CONTRADICTS' || edgeType === 'ALERT';
+            const isResolved = edgeType === 'RESOLVED_TO' || edgeType === 'SAME_AS';
+
             cy.add({
               group: 'edges',
               data: {
@@ -404,13 +843,17 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
                 target: edge.target,
                 label: edge.type,
                 confidence: edge.confidence || 1.0,
+                isStructural,
+                isContradiction,
+                isResolved,
+                isAnalytical: !isStructural && !isContradiction && !isResolved,
               },
             });
           }
         });
 
         // Re-run layout on expanded graph
-        cy.layout({ name: layoutName as any, animate: true, animationDuration: 500 }).run();
+        cy.layout(getLayoutOptions(layoutName)).run();
       }
     } catch (err: any) {
       console.error('Failed to expand node neighborhood', err);
@@ -436,16 +879,28 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
         // Highlight path on cytoscape canvas
         if (cyRef.current && res.data.data.pathNodes) {
           const cy = cyRef.current;
-          cy.elements().removeClass('highlighted faded');
+          cy.elements().removeClass('highlighted dimmed show-label');
           const pathNodeIds = res.data.data.pathNodes.map((n: any) => n.id);
 
+          const pathEles = cy.collection();
           pathNodeIds.forEach((id: string) => {
-            cy.getElementById(id).addClass('highlighted');
+            const el = cy.getElementById(id);
+            if (el.length > 0) pathEles.merge(el);
           });
 
+          // Highlight connecting path edges
+          for (let i = 0; i < pathNodeIds.length - 1; i++) {
+            const n1 = cy.getElementById(pathNodeIds[i]);
+            const n2 = cy.getElementById(pathNodeIds[i + 1]);
+            const edgesBetween = n1.edgesWith(n2);
+            pathEles.merge(edgesBetween);
+          }
+
+          cy.elements().difference(pathEles).addClass('dimmed');
+          pathEles.addClass('highlighted show-label');
+
           // Zoom to fit path
-          const pathEles = cy.nodes().filter((node) => pathNodeIds.includes(node.id()));
-          cy.fit(pathEles, 80);
+          cy.animate({ fit: { eles: pathEles, padding: 80 }, duration: 600 });
         }
       } else {
         setPathResult({ message: 'No path found between selected entities.' });
@@ -471,8 +926,8 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
     });
 
     if (matchedNodes.length > 0) {
-      cy.elements().removeClass('highlighted faded');
-      cy.elements().difference(matchedNodes).addClass('faded');
+      cy.elements().removeClass('highlighted dimmed show-label');
+      cy.elements().difference(matchedNodes).addClass('dimmed');
       matchedNodes.addClass('highlighted');
       cy.animate({ fit: { eles: matchedNodes, padding: 80 }, duration: 600 });
 
@@ -485,33 +940,35 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
   };
 
   // Zoom / Pan Control Handlers
-  const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.2);
+  const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.25);
   const handleZoomOut = () => cyRef.current?.zoom(cyRef.current.zoom() * 0.8);
   const handleFit = () => cyRef.current?.fit(undefined, 50);
   const handleResetLayout = () => {
-    cyRef.current?.elements().removeClass('highlighted faded');
-    cyRef.current?.layout({ name: layoutName as any, animate: true, animationDuration: 500 }).run();
+    setHighlightedLegendType(null);
+    cyRef.current?.elements().removeClass('highlighted dimmed show-label hovered');
+    cyRef.current?.layout(getLayoutOptions(layoutName)).run();
   };
 
   return (
     <div className="space-y-6">
       {/* Top Controls Header */}
-      <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl space-y-4">
+      <div className="corner-bracket bg-[#111019]/85 backdrop-blur-md border border-[rgba(139,92,246,0.20)] p-4 rounded-2xl space-y-4 relative overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#B026FF]/40 to-transparent pointer-events-none" />
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           {/* Title & Info */}
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-blue-600/20 border border-blue-500/30 rounded-xl text-blue-400">
+            <div className="p-2.5 bg-gradient-to-br from-[#DC2626]/20 to-[#7C3AED]/20 border border-[#7C3AED]/40 rounded-xl text-[#B026FF]">
               <Layers className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-100 flex items-center space-x-2">
                 <span>Interactive Intelligence Network Graph</span>
-                <span className="px-2 py-0.5 text-xs font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full">
+                <span className="px-2 py-0.5 text-xs font-semibold bg-[#7C3AED]/15 text-[#B026FF] border border-[#7C3AED]/30 rounded-full">
                   Neo4j Live Model
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                Explore entity relationships, bounded neighborhood expansions, provenance trails & shortest paths.
+                Systematic entity relationship topology, case anchor hubs, intelligence provenance & path analysis.
               </p>
             </div>
           </div>
@@ -522,17 +979,17 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
               <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search entity value or ID..."
+                placeholder="Search entity name, value or ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
+                className="w-full bg-[#15121C] border border-white/[0.08] rounded-xl pl-9 pr-4 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-[#7C3AED] transition"
               />
             </form>
 
             <button
               onClick={loadGraph}
               disabled={loading}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow transition cursor-pointer disabled:opacity-50"
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-[#DC2626] to-[#7C3AED] hover:from-[#EF4444] hover:to-[#8B5CF6] text-white rounded-xl text-xs font-semibold shadow-md shadow-[#7C3AED]/25 transition cursor-pointer disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               <span>Reload Graph</span>
@@ -541,14 +998,14 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
         </div>
 
         {/* Filter Toolbar */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-slate-800 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-3 border-t border-white/[0.08] text-xs">
           {/* Case Filter */}
           <div>
             <label className="block text-[11px] font-medium text-slate-400 mb-1">Filter by Case</label>
             <select
               value={selectedCaseId}
               onChange={(e) => setSelectedCaseId(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
+              className="w-full bg-[#15121C] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-[#7C3AED]"
             >
               <option value="">All Authorized Cases</option>
               {casesList.map((c) => (
@@ -565,7 +1022,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
             <select
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
+              className="w-full bg-[#15121C] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-[#7C3AED]"
             >
               {ENTITY_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -575,19 +1032,57 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
             </select>
           </div>
 
-          {/* Layout Selector */}
+          {/* Systematic Layout Selector */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">Graph Layout</label>
+            <label className="block text-[11px] font-medium text-slate-400 mb-1 flex items-center justify-between">
+              <span>Graph Layout</span>
+              <span className="text-[#B026FF] text-[9px] font-mono font-bold">SYSTEMATIC</span>
+            </label>
             <select
               value={layoutName}
               onChange={(e) => setLayoutName(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500"
+              className="w-full bg-[#15121C] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-[#7C3AED]"
             >
-              <option value="cose">Force-Directed (CoSE)</option>
-              <option value="concentric">Concentric Circles</option>
-              <option value="circle">Simple Circle</option>
-              <option value="grid">Grid Array</option>
-              <option value="breadthfirst">Hierarchical Trees</option>
+              <option value="concentric">Concentric Target (Case Hub)</option>
+              <option value="cose">Force-Directed (Spread Clusters)</option>
+              <option value="breadthfirst">Hierarchical Tree (Top-Down)</option>
+              <option value="circle">Radial Perimeter</option>
+              <option value="grid">Matrix Array</option>
+            </select>
+          </div>
+
+          {/* Link Filter Mode */}
+          <div>
+            <label className="block text-[11px] font-medium text-slate-400 mb-1 flex items-center space-x-1">
+              <Filter className="w-3 h-3 text-[#B026FF]" />
+              <span>Link Filter</span>
+            </label>
+            <select
+              value={linkFilter}
+              onChange={(e) => setLinkFilter(e.target.value as LinkFilterMode)}
+              className="w-full bg-[#15121C] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-[#7C3AED]"
+            >
+              <option value="ALL">All Links</option>
+              <option value="ANALYTICAL">Analytical Only (No Hub Spokes)</option>
+              <option value="STRUCTURAL">Structural Only (Case Spokes)</option>
+            </select>
+          </div>
+
+          {/* Edge Label Visibility Mode */}
+          <div>
+            <label className="block text-[11px] font-medium text-slate-400 mb-1 flex items-center space-x-1">
+              <Eye className="w-3 h-3 text-[#B026FF]" />
+              <span>Edge Labels</span>
+            </label>
+            <select
+              value={edgeLabelMode}
+              onChange={(e) => setEdgeLabelMode(e.target.value as EdgeLabelMode)}
+              className="w-full bg-[#15121C] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-[#7C3AED]"
+            >
+              <option value="SMART">Smart (Analytical Only)</option>
+              <option value="HOVER">On Hover / Selection Only</option>
+              <option value="ALL">Show All Labels</option>
+              <option value="OFF">Hide All Labels</option>
             </select>
           </div>
 
@@ -595,7 +1090,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
           <div>
             <div className="flex justify-between text-[11px] font-medium text-slate-400 mb-1">
               <span>Min Confidence</span>
-              <span className="text-blue-400 font-mono">{(minConfidence * 100).toFixed(0)}%</span>
+              <span className="text-[#B026FF] font-mono font-semibold">{(minConfidence * 100).toFixed(0)}%</span>
             </div>
             <input
               type="range"
@@ -604,7 +1099,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
               step="0.05"
               value={minConfidence}
               onChange={(e) => setMinConfidence(parseFloat(e.target.value))}
-              className="w-full h-1.5 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-blue-500 mt-2"
+              className="w-full h-1.5 bg-[#15121C] rounded-lg appearance-none cursor-pointer accent-[#B026FF] mt-2"
             />
           </div>
         </div>
@@ -613,67 +1108,130 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
       {/* Main Canvas & Side Panel Container */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Cytoscape Canvas Viewport */}
-        <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl relative overflow-hidden h-[620px]">
+        <div className="lg:col-span-8 corner-bracket-full bg-[#111019]/80 backdrop-blur-md border border-[rgba(139,92,246,0.20)] rounded-2xl relative overflow-hidden h-[640px] shadow-sm">
+          <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-[#DC2626]/40 to-[#B026FF]/40 pointer-events-none" />
+
           {/* Canvas Controls Overlay */}
-          <div className="absolute top-4 left-4 z-10 flex flex-col space-y-1.5 bg-slate-950/80 backdrop-blur border border-slate-800 p-1.5 rounded-xl shadow-lg">
+          <div className="absolute top-4 left-4 z-10 flex flex-col space-y-1.5 bg-[#15121C]/90 backdrop-blur border border-[rgba(139,92,246,0.20)] p-1.5 rounded-xl shadow-lg">
             <button
               onClick={handleZoomIn}
               title="Zoom In"
-              className="p-1.5 hover:bg-slate-800 text-slate-300 rounded-lg transition cursor-pointer"
+              className="p-1.5 hover:bg-[#201C2D] text-slate-300 hover:text-white rounded-lg transition cursor-pointer"
             >
               <ZoomIn className="w-4 h-4" />
             </button>
             <button
               onClick={handleZoomOut}
               title="Zoom Out"
-              className="p-1.5 hover:bg-slate-800 text-slate-300 rounded-lg transition cursor-pointer"
+              className="p-1.5 hover:bg-[#201C2D] text-slate-300 hover:text-white rounded-lg transition cursor-pointer"
             >
               <ZoomOut className="w-4 h-4" />
             </button>
             <button
               onClick={handleFit}
-              title="Fit View"
-              className="p-1.5 hover:bg-slate-800 text-slate-300 rounded-lg transition cursor-pointer"
+              title="Fit to Screen"
+              className="p-1.5 hover:bg-[#201C2D] text-slate-300 hover:text-[#B026FF] rounded-lg transition cursor-pointer"
             >
               <Maximize2 className="w-4 h-4" />
             </button>
             <button
               onClick={handleResetLayout}
-              title="Reset Layout & Selection"
-              className="p-1.5 hover:bg-slate-800 text-slate-300 rounded-lg transition cursor-pointer"
+              title="Re-run Systematic Layout"
+              className="p-1.5 hover:bg-[#201C2D] text-slate-300 hover:text-[#10b981] rounded-lg transition cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Graph Legend Overlay */}
-          <div className="absolute bottom-4 left-4 z-10 bg-slate-950/80 backdrop-blur border border-slate-800 p-3 rounded-xl shadow-lg max-w-xs hidden md:block text-[10px] space-y-1.5">
-            <p className="font-semibold text-slate-300 uppercase tracking-wider text-[9px] mb-1">Entity Legend</p>
-            <div className="grid grid-cols-3 gap-x-2 gap-y-1">
+          {/* Top Status & Metrics Badge Overlay */}
+          <div className="absolute top-4 right-4 z-10 hidden sm:flex items-center space-x-2 bg-[#15121C]/90 backdrop-blur border border-white/[0.08] px-3 py-1.5 rounded-xl text-[10px] font-mono text-slate-300 shadow-lg">
+            <span className="flex items-center space-x-1 text-slate-400">
+              <Network className="w-3 h-3 text-[#B026FF]" />
+              <span>Nodes:</span>
+              <strong className="text-white font-bold">{graphData.nodes.length}</strong>
+            </span>
+            <span className="text-slate-600">|</span>
+            <span className="flex items-center space-x-1 text-slate-400">
+              <Activity className="w-3 h-3 text-emerald-400" />
+              <span>Links:</span>
+              <strong className="text-white font-bold">{graphData.edges.length}</strong>
+            </span>
+            <span className="text-slate-600">|</span>
+            <span className="text-[#B026FF] uppercase font-bold tracking-wider">
+              {layoutName}
+            </span>
+          </div>
+
+          {/* Hovered Node Floating HUD Tooltip */}
+          {hoveredNode && !selectedNodeId && (
+            <div className="absolute bottom-4 right-4 z-10 bg-[#15121C]/95 backdrop-blur border border-[#B026FF]/50 px-3 py-2 rounded-xl text-[11px] shadow-2xl max-w-xs pointer-events-none transition-all duration-150">
+              <div className="flex items-center justify-between space-x-2">
+                <span
+                  className="px-1.5 py-0.5 rounded font-bold text-[9px] uppercase text-white shadow-sm"
+                  style={{ backgroundColor: getNodeColor(hoveredNode.type) }}
+                >
+                  {hoveredNode.type}
+                </span>
+                <span className="text-[10px] font-mono text-slate-400">
+                  Links: <strong className="text-white font-bold">{hoveredNode.degree}</strong>
+                </span>
+              </div>
+              <p className="text-slate-100 font-bold text-xs mt-1 truncate">{hoveredNode.label}</p>
+              {hoveredNode.value && hoveredNode.value !== hoveredNode.label && (
+                <p className="text-slate-400 font-mono text-[10px] truncate">{hoveredNode.value}</p>
+              )}
+            </div>
+          )}
+
+          {/* Interactive Graph Legend Overlay */}
+          <div className="absolute bottom-4 left-4 z-10 bg-[#15121C]/90 backdrop-blur border border-[rgba(139,92,246,0.20)] p-3 rounded-xl shadow-lg max-w-sm hidden md:block text-[10px] space-y-1.5">
+            <div className="flex items-center justify-between mb-1">
+              <p className="font-semibold text-slate-300 uppercase tracking-wider text-[9px]">
+                Interactive Legend (Click to Focus)
+              </p>
+              {highlightedLegendType && (
+                <button
+                  onClick={() => handleLegendClick(highlightedLegendType)}
+                  className="text-[9px] text-[#B026FF] hover:underline cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-x-3 gap-y-1">
               {[
+                { type: 'Case', color: '#DC2626' },
                 { type: 'Person', color: '#6366f1' },
+                { type: 'Organization', color: '#ec4899' },
                 { type: 'Phone', color: '#10b981' },
                 { type: 'Email', color: '#f59e0b' },
-                { type: 'IP/Domain', color: '#06b6d4' },
-                { type: 'Location', color: '#f43f5e' },
-                { type: 'Case', color: '#3b82f6' },
-                { type: 'Evidence', color: '#a855f7' },
+                { type: 'IP', color: '#B026FF' },
+                { type: 'Evidence', color: '#9333ea' },
                 { type: 'Event', color: '#f97316' },
                 { type: 'Account', color: '#eab308' },
-              ].map((item) => (
-                <div key={item.type} className="flex items-center space-x-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                  <span className="text-slate-400 truncate">{item.type}</span>
-                </div>
-              ))}
+              ].map((item) => {
+                const isHighlighted = highlightedLegendType === item.type;
+                return (
+                  <button
+                    key={item.type}
+                    onClick={() => handleLegendClick(item.type)}
+                    className={`flex items-center space-x-1.5 text-left py-0.5 px-1 rounded transition cursor-pointer ${
+                      isHighlighted ? 'bg-[#7C3AED]/30 text-white font-bold' : 'hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                    <span className="text-slate-300 truncate">{item.type}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {/* Loading Indicator */}
           {loading && (
-            <div className="absolute inset-0 z-20 bg-slate-950/70 backdrop-blur flex items-center justify-center space-x-3 text-sm text-slate-300">
-              <RefreshCw className="w-5 h-5 text-blue-400 animate-spin" />
-              <span>Rendering Neo4j Intelligence Graph...</span>
+            <div className="absolute inset-0 z-20 bg-[#08070B]/85 backdrop-blur flex items-center justify-center space-x-3 text-sm text-slate-300">
+              <RefreshCw className="w-5 h-5 text-[#B026FF] animate-spin" />
+              <span>Rendering Systematic Intelligence Graph...</span>
             </div>
           )}
 
@@ -686,15 +1244,16 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
           )}
 
           {/* Cytoscape Container */}
-          <div ref={containerRef} className="w-full h-full bg-slate-950/50" />
+          <div ref={containerRef} className="w-full h-full bg-[#08070B]/80" />
         </div>
 
         {/* Right Metadata & Details Panel */}
-        <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5 h-[620px] overflow-y-auto">
+        <div className="lg:col-span-4 corner-bracket bg-[#111019]/85 backdrop-blur-md border border-[rgba(139,92,246,0.20)] rounded-2xl p-5 space-y-5 h-[640px] overflow-y-auto shadow-sm relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#7C3AED]/40 to-transparent pointer-events-none" />
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
             <h3 className="text-sm font-bold text-slate-200 flex items-center space-x-2">
-              <Info className="w-4 h-4 text-blue-400" />
+              <Info className="w-4 h-4 text-[#B026FF]" />
               <span>Intelligence Metadata Panel</span>
             </h3>
             {(selectedNodeId || selectedEdgeDetails) && (
@@ -703,9 +1262,9 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
                   setSelectedNodeId(null);
                   setSelectedNodeDetails(null);
                   setSelectedEdgeDetails(null);
-                  cyRef.current?.elements().removeClass('highlighted faded');
+                  cyRef.current?.elements().removeClass('highlighted dimmed show-label hovered');
                 }}
-                className="text-xs text-slate-500 hover:text-slate-300 transition"
+                className="text-xs text-slate-500 hover:text-slate-300 transition cursor-pointer"
               >
                 Clear Selection
               </button>
@@ -715,7 +1274,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
           {/* Loading Details State */}
           {loadingDetails && (
             <div className="p-8 text-center text-xs text-slate-400 space-y-2">
-              <RefreshCw className="w-5 h-5 text-blue-400 animate-spin mx-auto" />
+              <RefreshCw className="w-5 h-5 text-[#B026FF] animate-spin mx-auto" />
               <p>Fetching node metadata & provenance...</p>
             </div>
           )}
@@ -724,7 +1283,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
           {!loadingDetails && selectedNodeDetails && (
             <div className="space-y-4 text-xs">
               {/* Type Badge & Canonical Value */}
-              <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+              <div className="p-3.5 bg-[#15121C] border border-white/[0.08] rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
                   <span
                     className="px-2.5 py-0.5 rounded-full font-bold text-[10px] uppercase text-white shadow"
@@ -746,32 +1305,32 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
               <button
                 onClick={handleExpandNode}
                 disabled={expandingNode}
-                className="w-full flex items-center justify-center space-x-2 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 rounded-xl font-semibold transition cursor-pointer disabled:opacity-50"
+                className="w-full flex items-center justify-center space-x-2 py-2 bg-[#7C3AED]/20 hover:bg-[#7C3AED]/30 border border-[#7C3AED]/40 text-[#B026FF] rounded-xl font-semibold transition cursor-pointer disabled:opacity-50"
               >
                 <Plus className={`w-4 h-4 ${expandingNode ? 'animate-spin' : ''}`} />
                 <span>{expandingNode ? 'Expanding Neighborhood...' : 'Expand Node (+1 Hop)'}</span>
               </button>
 
               {/* Pathfinding Action Setup */}
-              <div className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-2">
+              <div className="p-3 bg-[#15121C] border border-white/[0.08] rounded-xl space-y-2">
                 <p className="font-semibold text-slate-300 text-[11px]">Shortest Path Analysis</p>
                 <div className="grid grid-cols-2 gap-2 text-[10px]">
                   <button
                     onClick={() => setPathSourceId(selectedNodeDetails.id)}
-                    className={`py-1.5 px-2 rounded-lg border font-medium truncate transition ${
+                    className={`py-1.5 px-2 rounded-lg border font-medium truncate transition cursor-pointer ${
                       pathSourceId === selectedNodeDetails.id
-                        ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                        ? 'bg-[#7C3AED]/25 border-[#7C3AED] text-[#B026FF]'
+                        : 'bg-[#1C1827] border-white/[0.08] text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     {pathSourceId === selectedNodeDetails.id ? 'Start Set' : 'Set as Start'}
                   </button>
                   <button
                     onClick={() => setPathTargetId(selectedNodeDetails.id)}
-                    className={`py-1.5 px-2 rounded-lg border font-medium truncate transition ${
+                    className={`py-1.5 px-2 rounded-lg border font-medium truncate transition cursor-pointer ${
                       pathTargetId === selectedNodeDetails.id
                         ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                        : 'bg-[#1C1827] border-white/[0.08] text-slate-400 hover:text-slate-200'
                     }`}
                   >
                     {pathTargetId === selectedNodeDetails.id ? 'Target Set' : 'Set as Target'}
@@ -783,9 +1342,9 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
               {selectedNodeDetails.properties && (
                 <div className="space-y-2">
                   <p className="font-semibold text-slate-300">Properties</p>
-                  <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-3 space-y-1.5 font-mono text-[11px] max-h-40 overflow-y-auto">
+                  <div className="bg-[#15121C] border border-white/[0.08] rounded-xl p-3 space-y-1.5 font-mono text-[11px] max-h-40 overflow-y-auto">
                     {Object.entries(selectedNodeDetails.properties).map(([k, v]) => (
-                      <div key={k} className="flex justify-between border-b border-slate-900 pb-1">
+                      <div key={k} className="flex justify-between border-b border-white/[0.04] pb-1">
                         <span className="text-slate-500">{k}:</span>
                         <span className="text-slate-300 truncate max-w-[160px]">{String(v)}</span>
                       </div>
@@ -803,7 +1362,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
                       <div
                         key={c.id}
                         onClick={() => onSelectCase && onSelectCase(c.id)}
-                        className="p-2.5 bg-slate-950 hover:bg-slate-800/60 border border-slate-800 rounded-xl flex items-center justify-between cursor-pointer transition"
+                        className="p-2.5 bg-[#15121C] hover:bg-[#201C2D] border border-white/[0.08] rounded-xl flex items-center justify-between cursor-pointer transition"
                       >
                         <div>
                           <p className="font-semibold text-slate-200">Case {c.caseNumber}</p>
@@ -822,12 +1381,12 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
                   <p className="font-semibold text-slate-300">Evidence Provenance ({selectedNodeDetails.evidenceMentions.length})</p>
                   <div className="space-y-1.5 max-h-36 overflow-y-auto">
                     {selectedNodeDetails.evidenceMentions.map((m: any, idx: number) => (
-                      <div key={idx} className="p-2.5 bg-slate-950 border border-slate-800/80 rounded-xl space-y-1">
+                      <div key={idx} className="p-2.5 bg-[#15121C] border border-white/[0.08] rounded-xl space-y-1">
                         <div className="flex items-center justify-between text-[10px]">
-                          <span className="text-blue-400 font-semibold">{m.evidenceTitle || 'Evidence Document'}</span>
+                          <span className="text-[#B026FF] font-semibold">{m.evidenceTitle || 'Evidence Document'}</span>
                           <span className="text-slate-500 font-mono">Conf: {(m.confidence * 100).toFixed(0)}%</span>
                         </div>
-                        {m.snippet && <p className="text-[10px] text-slate-400 italic font-mono bg-slate-900 p-1.5 rounded">"{m.snippet}"</p>}
+                        {m.snippet && <p className="text-[10px] text-slate-400 italic font-mono bg-[#111019] p-1.5 rounded">"{m.snippet}"</p>}
                       </div>
                     ))}
                   </div>
@@ -839,8 +1398,8 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
           {/* Selected Edge Details View */}
           {!loadingDetails && selectedEdgeDetails && (
             <div className="space-y-4 text-xs">
-              <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-                <span className="px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-blue-600/20 text-blue-400 border border-blue-500/30 uppercase">
+              <div className="p-3.5 bg-[#15121C] border border-white/[0.08] rounded-xl space-y-2">
+                <span className="px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-[#7C3AED]/20 text-[#B026FF] border border-[#7C3AED]/30 uppercase">
                   RELATIONSHIP: {selectedEdgeDetails.type || selectedEdgeDetails.relType}
                 </span>
                 <div className="flex items-center justify-between pt-1 text-slate-300 font-mono text-[11px]">
@@ -854,7 +1413,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
               {selectedEdgeDetails.provenance && (
                 <div className="space-y-1.5">
                   <p className="font-semibold text-slate-300">Provenance Trail</p>
-                  <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-[11px] text-slate-400 font-mono leading-relaxed">
+                  <div className="p-3 bg-[#15121C] border border-white/[0.08] rounded-xl text-[11px] text-slate-400 font-mono leading-relaxed">
                     {selectedEdgeDetails.provenance}
                   </div>
                 </div>
@@ -863,9 +1422,9 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
               {selectedEdgeDetails.properties && Object.keys(selectedEdgeDetails.properties).length > 0 && (
                 <div className="space-y-2">
                   <p className="font-semibold text-slate-300">Edge Properties</p>
-                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-1 font-mono text-[11px]">
+                  <div className="bg-[#15121C] border border-white/[0.08] rounded-xl p-3 space-y-1 font-mono text-[11px]">
                     {Object.entries(selectedEdgeDetails.properties).map(([k, v]) => (
-                      <div key={k} className="flex justify-between border-b border-slate-900 pb-1">
+                      <div key={k} className="flex justify-between border-b border-white/[0.04] pb-1">
                         <span className="text-slate-500">{k}:</span>
                         <span className="text-slate-300">{String(v)}</span>
                       </div>
@@ -878,9 +1437,9 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
 
           {/* Shortest Path Calculation Widget Panel */}
           {(pathSourceId || pathTargetId) && (
-            <div className="p-3.5 bg-slate-950 border border-blue-900/40 rounded-xl space-y-3 text-xs">
+            <div className="p-3.5 bg-[#15121C] border border-[#7C3AED]/30 rounded-xl space-y-3 text-xs">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-blue-400 flex items-center space-x-1.5">
+                <span className="font-bold text-[#B026FF] flex items-center space-x-1.5">
                   <GitCommit className="w-4 h-4" />
                   <span>Pathfinder Tool</span>
                 </span>
@@ -890,7 +1449,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
                     setPathTargetId(null);
                     setPathResult(null);
                   }}
-                  className="text-slate-500 hover:text-slate-300 text-[10px]"
+                  className="text-slate-500 hover:text-slate-300 text-[10px] cursor-pointer"
                 >
                   Clear
                 </button>
@@ -899,7 +1458,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
               <div className="space-y-1.5 font-mono text-[10px]">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Source Node:</span>
-                  <span className="text-blue-300 truncate max-w-[140px]">{pathSourceId || 'Not Selected'}</span>
+                  <span className="text-[#B026FF] truncate max-w-[140px]">{pathSourceId || 'Not Selected'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Target Node:</span>
@@ -910,14 +1469,14 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
               <button
                 onClick={handleFindPath}
                 disabled={!pathSourceId || !pathTargetId || findingPath}
-                className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition shadow cursor-pointer disabled:opacity-50 flex items-center justify-center space-x-1.5"
+                className="w-full py-2 bg-gradient-to-r from-[#DC2626] to-[#7C3AED] hover:from-[#EF4444] hover:to-[#8B5CF6] text-white rounded-lg font-semibold transition shadow cursor-pointer disabled:opacity-50 flex items-center justify-center space-x-1.5"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${findingPath ? 'animate-spin' : ''}`} />
                 <span>Calculate Shortest Path</span>
               </button>
 
               {pathResult && (
-                <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg text-[10px] space-y-1">
+                <div className="p-2.5 bg-[#111019] border border-white/[0.08] rounded-lg text-[10px] space-y-1">
                   {pathResult.hopCount !== undefined ? (
                     <div>
                       <p className="text-emerald-400 font-bold">Path Found! {pathResult.hopCount} Hops</p>
@@ -933,7 +1492,7 @@ export const InteractiveGraphView: React.FC<InteractiveGraphViewProps> = ({
 
           {/* Default Empty Selection State */}
           {!loadingDetails && !selectedNodeDetails && !selectedEdgeDetails && !pathSourceId && !pathTargetId && (
-            <div className="p-8 text-center text-xs text-slate-500 space-y-3 border border-dashed border-slate-800 rounded-2xl">
+            <div className="p-8 text-center text-xs text-slate-500 space-y-3 border border-dashed border-white/[0.08] rounded-2xl">
               <Layers className="w-8 h-8 text-slate-600 mx-auto" />
               <div>
                 <p className="font-semibold text-slate-400">No Element Selected</p>

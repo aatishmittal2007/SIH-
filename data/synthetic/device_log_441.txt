@@ -1,0 +1,5 @@
+SYNTHETIC DEMO EVIDENCE — NOT REAL DATA
+Device: DEV-DEMO-441
+Username: arjun_demo_x
+Domain: shadow-demo.example.test
+Observed activity: synthetic digital session

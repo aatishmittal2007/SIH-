@@ -121,11 +121,18 @@ app.use('/api/v1/reports', reportRoutes);
 
 app.use('/api', testRoutes);
 
-// Health Checks
+// Root & Health Checks
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
+    service: 'tracex-backend',
+  });
+});
+
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({
-    service: 'TRACE-X Express Backend',
-    status: 'online',
+    status: 'ok',
+    service: 'tracex-backend',
     timestamp: new Date().toISOString(),
     version: '1.0.0-phase4',
   });
@@ -184,8 +191,18 @@ app.get('/api/health/ai', async (req: Request, res: Response) => {
 app.use(errorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`[TRACE-X Backend] Server listening on http://localhost:${PORT}`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[TRACE-X Backend] Port ${PORT} is already in use by another process.`);
+      console.error(`[TRACE-X Backend] An existing instance of the backend is already running on port ${PORT}.`);
+      process.exit(1);
+    } else {
+      console.error('[TRACE-X Backend] Server error:', err);
+    }
   });
 }
 

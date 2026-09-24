@@ -20,7 +20,7 @@ import {
   Layers,
   AlertTriangle
 } from 'lucide-react';
-import { apiClient, unwrapData } from '../api/client';
+import { apiClient, safeArray } from '../api/client';
 
 interface TimelineViewProps {
   onSelectCase?: (caseId: string) => void;
@@ -91,8 +91,7 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
   const fetchCasesList = async () => {
     try {
       const res = await apiClient.get('/cases');
-      const data = unwrapData(res);
-      const list = Array.isArray(data) ? data : (Array.isArray(res.data?.cases) ? res.data.cases : []);
+      const list = safeArray<{ id: string; caseNumber: string; title: string }>(res.data, 'cases');
       setCasesList(list);
     } catch (err) {
       console.warn('Failed to load cases list for timeline filter', err);
@@ -113,16 +112,11 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
       if (endDate) params.endDate = new Date(endDate).toISOString();
 
       const res = await apiClient.get('/temporal/timeline', { params });
-      const data = unwrapData(res);
-      const items = Array.isArray(data)
-        ? data
-        : (Array.isArray(res.data?.items)
-          ? res.data.items
-          : (Array.isArray(res.data) ? res.data : []));
+      const items = safeArray<TimelineItem>(res.data, 'items', 'timeline');
       setTimelineItems(items);
     } catch (err: any) {
       console.error('Failed to fetch timeline items:', err);
-      setError(err.response?.data?.error || 'Failed to load timeline events');
+      setError(err.response?.data?.error || err.userMessage || 'Failed to load timeline events');
       setTimelineItems([]);
     } finally {
       setLoading(false);
@@ -145,13 +139,13 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
         return { bg: 'bg-amber-500/10 text-amber-400 border-amber-500/20', icon: DollarSign };
       case 'EMAIL':
       case 'COMMUNICATION':
-        return { bg: 'bg-blue-500/10 text-blue-400 border-blue-500/20', icon: Mail };
+        return { bg: 'bg-[#B026FF]/10 text-[#C084FC] border-[#B026FF]/20', icon: Mail };
       case 'MOVEMENT':
       case 'LOCATION':
         return { bg: 'bg-purple-500/10 text-purple-400 border-purple-500/20', icon: MapPin };
       case 'MEETING':
       case 'ASSOCIATION':
-        return { bg: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20', icon: Users };
+        return { bg: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/20', icon: Users };
       case 'ANOMALY':
       case 'CONTRADICTION':
         return { bg: 'bg-rose-500/10 text-rose-400 border-rose-500/20', icon: AlertTriangle };
@@ -198,20 +192,20 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/60 p-6 rounded-2xl border border-slate-800 backdrop-blur-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 tx-panel corner-bracket p-6 shadow-xl">
         <div>
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-400">
+            <div className="p-2.5 bg-gradient-to-br from-[#DC2626]/20 to-[#7C3AED]/20 border border-[rgba(139,92,246,0.35)] rounded-xl text-[#B026FF] shadow-md shadow-[#DC2626]/10">
               <Clock className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2 tracking-tight">
                 Investigation Timeline & Event Stream
-                <span className="px-2.5 py-0.5 text-xs font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full">
-                  Phase 18
+                <span className="px-2.5 py-0.5 text-xs font-semibold bg-[#7C3AED]/15 text-[#B026FF] border border-[#7C3AED]/30 rounded-full font-mono">
+                  TEMPORAL
                 </span>
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-xs text-slate-400 mt-0.5 font-mono">
                 Chronological sequence of verified events, entity activities, and location changes
               </p>
             </div>
@@ -219,12 +213,12 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
         </div>
 
         <div className="flex items-center space-x-3">
-          <span className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-xl text-xs font-mono text-slate-300">
-            Role: {userRole}
+          <span className="px-3 py-1 bg-[#0D0A12] border border-white/[0.08] rounded-xl text-xs font-mono text-slate-300">
+            Clearance: <span className="text-[#B026FF] font-semibold">{userRole}</span>
           </span>
           <button
             onClick={fetchTimeline}
-            className="flex items-center space-x-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold text-slate-200 transition cursor-pointer"
+            className="tx-btn-secondary flex items-center space-x-2 px-3.5 py-2 text-xs font-semibold cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh Timeline</span>
@@ -233,7 +227,7 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
       </div>
 
       {/* Filter Controls Toolbar */}
-      <form onSubmit={handleSearchSubmit} className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl space-y-4">
+      <form onSubmit={handleSearchSubmit} className="tx-panel p-4 rounded-2xl space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
           {/* Case Selector */}
           <div>
@@ -244,7 +238,7 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
             <select
               value={selectedCaseId}
               onChange={(e) => setSelectedCaseId(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 transition"
+              className="tx-input w-full px-3 py-2 text-xs"
             >
               <option value="">All Assigned Cases</option>
               {casesList.map((c) => (
@@ -264,7 +258,7 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
             <select
               value={eventTypeFilter}
               onChange={(e) => setEventTypeFilter(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 transition"
+              className="tx-input w-full px-3 py-2 text-xs"
             >
               <option value="ALL">All Event Types</option>
               <option value="CALL">Call / Telephony</option>
@@ -289,7 +283,7 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
                 placeholder="Search entity name/ID..."
                 value={entityQuery}
                 onChange={(e) => setEntityQuery(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-2 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500 transition"
+                className="tx-input w-full pl-8 pr-3 py-2 text-xs"
               />
               <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
             </div>
@@ -304,7 +298,7 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
             <select
               value={groupBy}
               onChange={(e) => setGroupBy(e.target.value as any)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-cyan-500 transition"
+              className="tx-input w-full px-3 py-2 text-xs"
             >
               <option value="day">By Date / Day</option>
               <option value="week">By Week</option>
@@ -315,7 +309,7 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
         </div>
 
         {/* Secondary Filters: Date Range & Confidence */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-3 border-t border-slate-800/80 text-xs">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 pt-3 border-t border-white/[0.08] text-xs">
           <div className="flex items-center space-x-3 w-full md:w-auto">
             <div className="flex items-center space-x-1 text-slate-400">
               <Calendar className="w-3.5 h-3.5" />
@@ -325,14 +319,14 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-slate-200 focus:outline-none"
+              className="tx-input px-2.5 py-1 text-xs"
             />
             <div className="text-slate-400">to</div>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-slate-200 focus:outline-none"
+              className="tx-input px-2.5 py-1 text-xs"
             />
           </div>
 
@@ -340,7 +334,7 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
             <div className="flex items-center space-x-2">
               <Sliders className="w-3.5 h-3.5 text-slate-400" />
               <span className="text-slate-400">Min Confidence:</span>
-              <span className="font-mono text-cyan-400 font-bold">{Math.round(minConfidence * 100)}%</span>
+              <span className="font-mono text-[#B026FF] font-bold">{Math.round(minConfidence * 100)}%</span>
             </div>
             <input
               type="range"
@@ -349,12 +343,12 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
               step="0.05"
               value={minConfidence}
               onChange={(e) => setMinConfidence(parseFloat(e.target.value))}
-              className="w-28 accent-cyan-500 cursor-pointer"
+              className="w-28 accent-[#7C3AED] cursor-pointer"
             />
 
             <button
               type="submit"
-              className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl shadow-lg transition cursor-pointer"
+              className="tx-btn-primary px-4 py-1.5 text-xs font-semibold cursor-pointer"
             >
               Apply Filters
             </button>
@@ -364,22 +358,22 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
 
       {/* Main Timeline Stream */}
       {error && (
-        <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs flex items-center space-x-2">
+        <div className="p-4 bg-[#DC2626]/10 border border-[#DC2626]/30 rounded-xl text-[#EF4444] text-xs flex items-center space-x-2 font-mono">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {loading ? (
-        <div className="p-12 text-center text-slate-400 bg-slate-900/40 border border-slate-800 rounded-2xl space-y-3">
-          <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin mx-auto" />
+        <div className="p-12 text-center text-slate-400 tx-panel space-y-3 font-mono">
+          <RefreshCw className="w-6 h-6 text-[#B026FF] animate-spin mx-auto" />
           <p className="text-sm font-medium">Fetching verified investigation event stream...</p>
         </div>
       ) : !Array.isArray(timelineItems) || timelineItems.length === 0 ? (
-        <div className="p-12 text-center text-slate-500 bg-slate-900/40 border border-slate-800 rounded-2xl space-y-2">
+        <div className="p-12 text-center text-slate-500 tx-panel space-y-2">
           <Clock className="w-8 h-8 text-slate-600 mx-auto mb-2" />
           <p className="text-base font-semibold text-slate-300">No Timeline Events Found</p>
-          <p className="text-xs">Adjust your search terms or confidence threshold to view results.</p>
+          <p className="text-xs font-mono">Adjust your search terms or confidence threshold to view results.</p>
         </div>
       ) : (
         <div className="space-y-8">
@@ -387,15 +381,15 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
             <div key={group.groupKey} className="space-y-4">
               {/* Group Sticky Header */}
               <div className="flex items-center space-x-3">
-                <div className="px-3.5 py-1 bg-slate-800 border border-slate-700 rounded-xl text-xs font-bold text-cyan-400 tracking-wide">
+                <div className="px-3.5 py-1 bg-[#0D0A12] border border-white/[0.08] rounded-xl text-xs font-bold text-[#B026FF] tracking-wide font-mono">
                   {group.groupKey}
                 </div>
-                <div className="h-px bg-slate-800 flex-1" />
+                <div className="h-px bg-white/[0.08] flex-1" />
                 <span className="text-xs font-mono text-slate-500">{group.items.length} events</span>
               </div>
 
               {/* Event Cards inside group */}
-              <div className="relative pl-6 border-l-2 border-slate-800 space-y-4 ml-4">
+              <div className="relative pl-6 border-l-2 border-white/[0.08] space-y-4 ml-4">
                 {group.items.map((item) => {
                   const badge = getEventTypeBadge(item.type);
                   const Icon = badge.icon;
@@ -410,20 +404,20 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
                     <div
                       key={item.id}
                       onClick={() => setSelectedEvent(item)}
-                      className="group relative bg-slate-900/70 hover:bg-slate-900 border border-slate-800/90 hover:border-cyan-500/40 rounded-2xl p-4.5 transition cursor-pointer space-y-3 shadow-md"
+                      className="group relative tx-panel hover:bg-[#15121C] hover:border-[rgba(176,38,255,0.4)] p-4.5 transition cursor-pointer space-y-3 shadow-md"
                     >
                       {/* Timeline Dot Node */}
-                      <div className="absolute -left-[31px] top-5 w-4 h-4 rounded-full bg-slate-950 border-2 border-cyan-500 group-hover:bg-cyan-500 transition shadow-sm" />
+                      <div className="absolute -left-[31px] top-5 w-4 h-4 rounded-full bg-[#08070B] border-2 border-[#EF4444] group-hover:bg-[#EF4444] transition shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
 
                       {/* Card Top Row */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/60 pb-2.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.06] pb-2.5">
                         <div className="flex items-center space-x-2.5">
                           <span className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center space-x-1.5 ${badge.bg}`}>
                             <Icon className="w-3.5 h-3.5" />
                             <span>{item.type}</span>
                           </span>
 
-                          <span className="text-xs font-mono text-cyan-300 font-medium">
+                          <span className="text-xs font-mono text-[#B026FF] font-medium">
                             {dateStr}
                           </span>
                         </div>
@@ -435,14 +429,14 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
                                 e.stopPropagation();
                                 if (onSelectCase) onSelectCase(item.caseId);
                               }}
-                              className="font-mono text-blue-400 hover:underline flex items-center space-x-1 bg-blue-500/10 px-2 py-0.5 rounded-md border border-blue-500/20"
+                              className="font-mono text-[#B026FF] hover:underline flex items-center space-x-1 bg-[#7C3AED]/15 px-2 py-0.5 rounded-md border border-[#7C3AED]/30"
                             >
                               <Shield className="w-3 h-3" />
                               <span>{item.caseNumber}</span>
                             </span>
                           )}
 
-                          <span className="font-mono text-[11px] text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded-md">
+                          <span className="font-mono text-[11px] text-slate-400 bg-[#0D0A12] border border-white/[0.06] px-2 py-0.5 rounded-md">
                             Conf: {Math.round(item.confidence * 100)}%
                           </span>
                         </div>
@@ -450,10 +444,10 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
 
                       {/* Card Title & Content */}
                       <div>
-                        <h4 className="text-sm font-semibold text-slate-100 group-hover:text-cyan-300 transition">
+                        <h4 className="text-sm font-semibold text-slate-100 group-hover:text-[#B026FF] transition">
                           {item.title}
                         </h4>
-                        <p className="text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed">
+                        <p className="text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed font-mono">
                           {item.description}
                         </p>
                       </div>
@@ -461,24 +455,24 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
                       {/* Bottom Context: Involved Entities & Location */}
                       <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
                         {item.location && (
-                          <div className="flex items-center space-x-1 text-purple-300 bg-purple-500/10 border border-purple-500/20 px-2.5 py-1 rounded-lg">
+                          <div className="flex items-center space-x-1 text-purple-300 bg-purple-500/15 border border-purple-500/30 px-2.5 py-1 rounded-lg">
                             <MapPin className="w-3.5 h-3.5 shrink-0" />
-                            <span className="truncate max-w-[200px]">{item.location.name}</span>
+                            <span className="truncate max-w-[200px] font-mono">{item.location.name}</span>
                           </div>
                         )}
 
                         {item.involvedEntities && item.involvedEntities.map((ent) => (
-                          <div key={ent.id} className="flex items-center space-x-1 text-slate-300 bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700/60 text-[11px]">
-                            <Tag className="w-3 h-3 text-cyan-400 shrink-0" />
+                          <div key={ent.id} className="flex items-center space-x-1 text-slate-300 bg-[#0D0A12] px-2 py-0.5 rounded-lg border border-white/[0.08] text-[11px]">
+                            <Tag className="w-3 h-3 text-[#B026FF] shrink-0" />
                             <span>{ent.name}</span>
-                            <span className="text-[10px] text-slate-500 uppercase">({ent.type})</span>
+                            <span className="text-[10px] text-slate-500 font-mono uppercase">({ent.type})</span>
                           </div>
                         ))}
 
                         {item.evidence && (
-                          <div className="ml-auto flex items-center space-x-1 text-slate-400 text-[11px] bg-slate-950 px-2 py-0.5 rounded-md border border-slate-800">
+                          <div className="ml-auto flex items-center space-x-1 text-slate-400 text-[11px] bg-[#0D0A12] px-2 py-0.5 rounded-md border border-white/[0.08]">
                             <FileText className="w-3 h-3 text-amber-400" />
-                            <span className="truncate max-w-[150px]">{item.evidence.title}</span>
+                            <span className="truncate max-w-[150px] font-mono">{item.evidence.title}</span>
                           </div>
                         )}
                       </div>
@@ -493,17 +487,17 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
 
       {/* Event Details Drawer / Inspector Modal */}
       {selectedEvent && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex justify-end p-4 md:p-6 animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex justify-end p-4 md:p-6 animate-fadeIn">
+          <div className="tx-panel corner-bracket-full border border-[rgba(139,92,246,0.3)] w-full max-w-xl rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-4.5 border-b border-slate-800 bg-slate-950/40">
+            <div className="flex items-center justify-between p-4.5 border-b border-white/[0.08] bg-[#0D0A12]">
               <div className="flex items-center space-x-2">
-                <Info className="w-5 h-5 text-cyan-400" />
-                <h3 className="text-base font-bold text-slate-100">Event Provenance & Details</h3>
+                <Info className="w-5 h-5 text-[#B026FF]" />
+                <h3 className="text-base font-bold text-slate-100 tracking-tight">Event Provenance & Details</h3>
               </div>
               <button
                 onClick={() => setSelectedEvent(null)}
-                className="p-1 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition"
+                className="p-1 text-slate-400 hover:text-slate-200 tx-btn-secondary rounded-lg transition"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -512,17 +506,17 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
             {/* Modal Content */}
             <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
               <div>
-                <span className="px-2.5 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg font-mono font-semibold uppercase">
+                <span className="px-2.5 py-1 bg-[#7C3AED]/15 text-[#B026FF] border border-[#7C3AED]/30 rounded-lg font-mono font-semibold uppercase">
                   {selectedEvent.type}
                 </span>
                 <h2 className="text-lg font-bold text-slate-100 mt-2">{selectedEvent.title}</h2>
-                <p className="text-slate-300 mt-2 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800">
+                <p className="text-slate-300 mt-2 leading-relaxed tx-panel-elevated p-3 font-mono">
                   {selectedEvent.description}
                 </p>
               </div>
 
               {/* Timestamps & Confidence */}
-              <div className="grid grid-cols-2 gap-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
+              <div className="grid grid-cols-2 gap-3 tx-panel-elevated p-3.5">
                 <div>
                   <p className="text-slate-500 font-medium">Timestamp</p>
                   <p className="text-slate-200 font-mono font-semibold mt-0.5">
@@ -540,10 +534,10 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
               {/* Case Assignment */}
               {selectedEvent.caseNumber && (
                 <div>
-                  <h4 className="font-semibold text-slate-400 mb-1">Associated Investigation Case</h4>
-                  <div className="flex items-center justify-between p-3 bg-slate-950 rounded-xl border border-slate-800">
+                  <h4 className="font-semibold text-slate-400 mb-1 font-mono">Associated Investigation Case</h4>
+                  <div className="flex items-center justify-between p-3 tx-panel-elevated">
                     <div>
-                      <p className="font-bold text-slate-200">{selectedEvent.caseNumber}</p>
+                      <p className="font-bold text-slate-200 font-mono">{selectedEvent.caseNumber}</p>
                       <p className="text-slate-400">{selectedEvent.caseTitle}</p>
                     </div>
                     {onSelectCase && (
@@ -553,7 +547,7 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
                           setSelectedEvent(null);
                           onSelectCase(cId);
                         }}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold flex items-center space-x-1"
+                        className="tx-btn-primary px-3 py-1.5 font-semibold flex items-center space-x-1 cursor-pointer"
                       >
                         <span>Open Case</span>
                         <ExternalLink className="w-3 h-3" />
@@ -565,15 +559,15 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
 
               {/* Involved Entities */}
               <div>
-                <h4 className="font-semibold text-slate-400 mb-2">Involved Intelligence Entities ({selectedEvent.involvedEntities?.length || 0})</h4>
+                <h4 className="font-semibold text-slate-400 mb-2 font-mono">Involved Intelligence Entities ({selectedEvent.involvedEntities?.length || 0})</h4>
                 <div className="space-y-2">
                   {selectedEvent.involvedEntities?.map((ent) => (
-                    <div key={ent.id} className="flex items-center justify-between p-2.5 bg-slate-950 rounded-xl border border-slate-800">
+                    <div key={ent.id} className="flex items-center justify-between p-2.5 tx-panel-elevated">
                       <div className="flex items-center space-x-2">
-                        <Users className="w-4 h-4 text-cyan-400" />
+                        <Users className="w-4 h-4 text-[#B026FF]" />
                         <span className="font-semibold text-slate-200">{ent.name}</span>
                       </div>
-                      <span className="px-2 py-0.5 bg-slate-800 text-slate-300 rounded font-mono uppercase text-[10px]">
+                      <span className="px-2 py-0.5 bg-[#7C3AED]/15 text-[#B026FF] border border-[#7C3AED]/30 rounded font-mono uppercase text-[10px]">
                         {ent.type}
                       </span>
                     </div>
@@ -584,17 +578,17 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
               {/* Location Details */}
               {selectedEvent.location && (
                 <div>
-                  <h4 className="font-semibold text-slate-400 mb-2">Event Location Record</h4>
+                  <h4 className="font-semibold text-slate-400 mb-2 font-mono">Event Location Record</h4>
                   <div className="p-3.5 bg-purple-950/20 border border-purple-500/20 rounded-xl space-y-1">
                     <div className="flex items-center space-x-2 text-purple-300 font-semibold">
                       <MapPin className="w-4 h-4" />
                       <span>{selectedEvent.location.name}</span>
                     </div>
                     {selectedEvent.location.address && (
-                      <p className="text-slate-400 pl-6">{selectedEvent.location.address}</p>
+                      <p className="text-slate-400 pl-6 font-mono">{selectedEvent.location.address}</p>
                     )}
                     {selectedEvent.location.latitude && (
-                      <p className="text-mono text-slate-500 pl-6 text-[11px]">
+                      <p className="font-mono text-slate-500 pl-6 text-[11px]">
                         Coords: {selectedEvent.location.latitude}, {selectedEvent.location.longitude}
                       </p>
                     )}
@@ -605,13 +599,13 @@ export function TimelineView({ onSelectCase, userRole, initialCaseId }: Timeline
               {/* Evidence Provenance */}
               {selectedEvent.evidence && (
                 <div>
-                  <h4 className="font-semibold text-slate-400 mb-2">Source Evidence Provenance</h4>
-                  <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                  <h4 className="font-semibold text-slate-400 mb-2 font-mono">Source Evidence Provenance</h4>
+                  <div className="p-3.5 tx-panel-elevated space-y-2">
                     <div className="flex items-center space-x-2">
                       <FileText className="w-4 h-4 text-amber-400" />
                       <span className="font-bold text-slate-200">{selectedEvent.evidence.title}</span>
                     </div>
-                    <p className="text-slate-400 text-[11px]">Source: {selectedEvent.evidence.sourceName || 'Primary Evidence File'}</p>
+                    <p className="text-slate-400 text-[11px] font-mono">Source: {selectedEvent.evidence.sourceName || 'Primary Evidence File'}</p>
                     <p className="text-slate-500 font-mono text-[10px]">Evidence ID: {selectedEvent.evidence.id}</p>
                   </div>
                 </div>

@@ -1,0 +1,4 @@
+correlation_id,case_a,case_b,entity_a,entity_b,score,explanation
+CORR-001,CASE-001,CASE-002,ENT-001,ENT-006,0.91,Shared synthetic phone identifier; recurring subject
+CORR-002,CASE-001,CASE-002,ENT-012,ENT-012,0.86,Same synthetic device identifier appears in both cases
+CORR-003,CASE-001,CASE-003,ENT-010,ENT-010,0.78,Same synthetic account identifier recurs across cases

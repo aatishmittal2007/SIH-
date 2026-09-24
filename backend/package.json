@@ -8,6 +8,8 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "db:seed": "tsx src/seed/seed.ts",
+    "seed:demo": "tsx src/seed/seed-demo.ts",
+    "seed:demo:reset": "tsx src/seed/seed-demo.ts --reset",
     "test": "vitest run"
   },
   "dependencies": {

@@ -1,11 +1,119 @@
-import React, { useState } from 'react';
-import { Eye, EyeOff, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Eye, EyeOff, AlertCircle, Mail, Lock } from 'lucide-react';
 import { apiClient, unwrapData } from '../api/client';
 import hoodedHackerImg from '../assets/hooded-hacker.jpg';
+import { CyberHudBackground } from './CyberHudBackground';
 
 interface LoginModalProps {
   onLoginSuccess: (user: any, token: string) => void;
 }
+
+/**
+ * Lightweight, atmospheric cyber particles canvas
+ * Renders small, slow-moving telemetry/data nodes with faint connecting lines
+ * Automatically respects prefers-reduced-motion
+ */
+const CyberParticlesCanvas: React.FC = () => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    let animationFrameId: number;
+    let width = (canvas.width = window.innerWidth);
+    let height = (canvas.height = window.innerHeight);
+
+    const handleResize = () => {
+      if (!canvas) return;
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    };
+    window.addEventListener('resize', handleResize);
+
+    // Red -> Magenta -> Purple cybersecurity palette nodes
+    const colors = [
+      'rgba(220, 38, 38, 0.45)',   // Crimson red #DC2626
+      'rgba(176, 38, 255, 0.5)',   // Red-purple transition #B026FF
+      'rgba(124, 58, 237, 0.45)',  // Primary purple #7C3AED
+      'rgba(139, 92, 246, 0.4)',   // Bright purple #8B5CF6
+    ];
+
+    const count = 28; // Subtle, discrete atmospheric count
+    const particles = Array.from({ length: count }, () => ({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      vx: (Math.random() - 0.5) * 0.22, // Very slow, calm velocity
+      vy: (Math.random() - 0.5) * 0.22,
+      radius: Math.random() * 1.2 + 0.8,
+      color: colors[Math.floor(Math.random() * colors.length)],
+    }));
+
+    const render = () => {
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw faint connections between nearby nodes
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 95) {
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(176, 38, 255, ${0.07 * (1 - dist / 95)})`;
+            ctx.lineWidth = 0.6;
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Draw and update particle telemetry points
+      for (const p of particles) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+
+        if (!prefersReducedMotion) {
+          p.x += p.vx;
+          p.y += p.vy;
+
+          if (p.x < 0) p.x = width;
+          else if (p.x > width) p.x = 0;
+          if (p.y < 0) p.y = height;
+          else if (p.y > height) p.y = 0;
+        }
+      }
+
+      if (!prefersReducedMotion) {
+        animationFrameId = requestAnimationFrame(render);
+      }
+    };
+
+    render();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 w-full h-full pointer-events-none z-0"
+      aria-hidden="true"
+    />
+  );
+};
 
 export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('priya.verma@tracex.gov.in');
@@ -23,8 +131,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
 
     try {
       const res = await apiClient.post('/auth/login', { email, password });
-      const { user, token } = unwrapData<{ user: any; token: string }>(res.data);
-      localStorage.setItem('tracex_jwt_token', token);
+      const data = (unwrapData<{ user: any; token: string }>(res.data) || res.data) as any;
+      const user = data?.user || res.data?.user;
+      const token = data?.token || res.data?.token;
+      if (token) {
+        localStorage.setItem('tracex_jwt_token', token);
+      }
       onLoginSuccess(user, token);
     } catch (err: any) {
       setError(err.userMessage ?? err.response?.data?.error ?? 'Authentication failed. Please check your credentials.');
@@ -56,25 +168,25 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-between bg-[#0A0A0A] text-[#F2F2F2] font-sans min-h-screen overflow-y-auto p-4 sm:p-6 lg:p-10 select-none">
+    <div className="fixed inset-0 z-50 flex flex-col justify-between bg-[#050509] text-[#F5F5F5] font-sans min-h-screen overflow-y-auto p-4 sm:p-6 lg:p-10 select-none relative">
       
-      {/* Brand Header */}
-      <div className="w-full max-w-6xl mx-auto flex items-center justify-between pt-2 pb-6">
-        <div className="flex items-center space-x-2 text-2xl font-bold tracking-tight">
-          <span className="text-white font-extrabold tracking-tight">TRACE</span>
-          <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-[#6D4AFF] text-white text-sm font-bold shadow-md shadow-[#6D4AFF]/40">
-            X
-          </span>
-        </div>
+      {/* Large Animated Rotating Cyber HUD Background Layer */}
+      <CyberHudBackground />
 
-        {/* Quick Demo Preset Pills */}
-        <div className="hidden sm:flex items-center space-x-2 bg-[#111114] border border-white/10 p-1 rounded-xl text-xs">
-          <span className="px-2 text-[11px] font-semibold text-[#8A8F98] uppercase tracking-wider">Demo Accounts:</span>
+      {/* Atmospheric Background Telemetry Particles */}
+      <CyberParticlesCanvas />
+
+      {/* Foreground Top Bar with Demo Account Quick Presets */}
+      <div className="w-full max-w-6xl mx-auto flex items-center justify-end pt-2 pb-2 relative z-20">
+        <div className="hidden sm:flex items-center space-x-2 bg-[#0D0A12]/90 border border-[rgba(139,92,246,0.25)] p-1 rounded-xl text-xs shadow-lg backdrop-blur-md">
+          <span className="px-2 text-[11px] font-semibold text-[#A1A1AA] uppercase tracking-wider font-mono">Demo Accounts:</span>
           <button
             type="button"
             onClick={() => selectPreset('admin@tracex.gov.in', 'AdminPass123!')}
-            className={`px-2.5 py-1 rounded-lg transition-colors font-medium text-xs ${
-              email === 'admin@tracex.gov.in' ? 'bg-[#6D4AFF] text-white font-semibold' : 'text-[#8A8F98] hover:text-white'
+            className={`px-2.5 py-1 rounded-lg transition-all font-mono text-xs cursor-pointer ${
+              email === 'admin@tracex.gov.in'
+                ? 'bg-gradient-to-r from-[#DC2626] to-[#7C3AED] text-white font-semibold shadow-[0_0_10px_rgba(220,38,38,0.35)]'
+                : 'text-[#A1A1AA] hover:text-white hover:bg-white/[0.04]'
             }`}
           >
             Admin
@@ -82,8 +194,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
           <button
             type="button"
             onClick={() => selectPreset('priya.verma@tracex.gov.in', 'Investigator123!')}
-            className={`px-2.5 py-1 rounded-lg transition-colors font-medium text-xs ${
-              email === 'priya.verma@tracex.gov.in' ? 'bg-[#6D4AFF] text-white font-semibold' : 'text-[#8A8F98] hover:text-white'
+            className={`px-2.5 py-1 rounded-lg transition-all font-mono text-xs cursor-pointer ${
+              email === 'priya.verma@tracex.gov.in'
+                ? 'bg-gradient-to-r from-[#DC2626] to-[#7C3AED] text-white font-semibold shadow-[0_0_10px_rgba(220,38,38,0.35)]'
+                : 'text-[#A1A1AA] hover:text-white hover:bg-white/[0.04]'
             }`}
           >
             Investigator
@@ -91,8 +205,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
           <button
             type="button"
             onClick={() => selectPreset('amit.patel@tracex.gov.in', 'Analyst123!')}
-            className={`px-2.5 py-1 rounded-lg transition-colors font-medium text-xs ${
-              email === 'amit.patel@tracex.gov.in' ? 'bg-[#6D4AFF] text-white font-semibold' : 'text-[#8A8F98] hover:text-white'
+            className={`px-2.5 py-1 rounded-lg transition-all font-mono text-xs cursor-pointer ${
+              email === 'amit.patel@tracex.gov.in'
+                ? 'bg-gradient-to-r from-[#DC2626] to-[#7C3AED] text-white font-semibold shadow-[0_0_10px_rgba(220,38,38,0.35)]'
+                : 'text-[#A1A1AA] hover:text-white hover:bg-white/[0.04]'
             }`}
           >
             Analyst
@@ -101,85 +217,138 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
       </div>
 
       {/* Main Centered Circuit Card Container */}
-      <div className="w-full max-w-5xl mx-auto my-auto relative">
+      <div className="w-full max-w-5xl mx-auto my-auto relative z-10">
         
-        {/* Decorative Circuit Border (SVG) matching Reference Image 1 shape + TRACE-X Violet Accent */}
+        {/* Slow-moving Ambient Glow Behind the Login Panel */}
+        <div className="absolute -inset-10 sm:-inset-16 pointer-events-none z-0 overflow-hidden">
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[#5B21B6]/28 rounded-full blur-[110px] animate-cyber-ambient-glow" />
+          <div
+            className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[#DC2626]/20 rounded-full blur-[120px] animate-cyber-ambient-glow"
+            style={{ animationDelay: '-4s' }}
+          />
+        </div>
+
+        {/* Decorative Circuit Border (SVG) with Red -> Purple Palette & Animated Sweep */}
         <div className="absolute -inset-4 sm:-inset-6 pointer-events-none z-0">
           <svg
-            className="w-full h-full text-[#6D4AFF] overflow-visible"
+            className="w-full h-full overflow-visible"
             viewBox="0 0 1000 600"
             preserveAspectRatio="none"
           >
             <defs>
-              <filter id="violet-glow" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="3" result="blur" />
+              {/* Red to Purple Gradient Definition */}
+              <linearGradient id="cyber-red-purple-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#DC2626" />
+                <stop offset="45%" stopColor="#B026FF" />
+                <stop offset="100%" stopColor="#7C3AED" />
+              </linearGradient>
+
+              {/* Mixed Red/Purple Glow Filter */}
+              <filter id="cyber-glow-filter" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="3.5" result="blur" />
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             </defs>
 
-            {/* Chamfered Circuit Path */}
+            {/* Base Chamfered Circuit Path */}
             <path
               d="M 30,2 L 670,2 L 690,22 L 830,22 L 850,2 L 970,2 L 998,30 L 998,570 L 970,598 L 640,598 L 620,578 L 480,578 L 460,598 L 30,598 L 2,570 L 2,30 Z"
               fill="none"
-              stroke="#6D4AFF"
+              stroke="url(#cyber-red-purple-grad)"
               strokeWidth="1.8"
               vectorEffect="non-scaling-stroke"
-              filter="url(#violet-glow)"
+              filter="url(#cyber-glow-filter)"
               opacity="0.85"
             />
 
-            {/* Glowing Circuit Node Dots */}
-            <circle cx="30" cy="2" r="4" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="2" />
-            <circle cx="690" cy="22" r="3.5" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="1.5" />
-            <circle cx="830" cy="22" r="3.5" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="1.5" />
-            <circle cx="970" cy="2" r="4" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="2" />
-            <circle cx="998" cy="30" r="4" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="2" />
-            <circle cx="998" cy="300" r="4" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="2" />
-            <circle cx="970" cy="598" r="4" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="2" />
-            <circle cx="620" cy="578" r="3.5" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="1.5" />
-            <circle cx="480" cy="578" r="3.5" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="1.5" />
-            <circle cx="30" cy="598" r="4" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="2" />
-            <circle cx="2" cy="570" r="4" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="2" />
-            <circle cx="2" cy="300" r="4" fill="#E8E8E8" stroke="#6D4AFF" strokeWidth="2" />
+            {/* Subtle Animated Circuit-Line Trace Sweep */}
+            <path
+              d="M 30,2 L 670,2 L 690,22 L 830,22 L 850,2 L 970,2 L 998,30 L 998,570 L 970,598 L 640,598 L 620,578 L 480,578 L 460,598 L 30,598 L 2,570 L 2,30 Z"
+              fill="none"
+              stroke="#F5F5F5"
+              strokeWidth="2.2"
+              vectorEffect="non-scaling-stroke"
+              className="animate-circuit-sweep"
+              opacity="0.8"
+            />
+
+            {/* Glowing Circuit Node Dots with Alternating Red / Purple Finishes */}
+            <circle cx="30" cy="2" r="4" fill="#F5F5F5" stroke="#DC2626" strokeWidth="2" />
+            <circle cx="690" cy="22" r="3.5" fill="#F5F5F5" stroke="#B026FF" strokeWidth="1.5" />
+            <circle cx="830" cy="22" r="3.5" fill="#F5F5F5" stroke="#B026FF" strokeWidth="1.5" />
+            <circle cx="970" cy="2" r="4" fill="#F5F5F5" stroke="#7C3AED" strokeWidth="2" />
+            <circle cx="998" cy="30" r="4" fill="#F5F5F5" stroke="#7C3AED" strokeWidth="2" />
+            <circle cx="998" cy="300" r="4" fill="#F5F5F5" stroke="#B026FF" strokeWidth="2" />
+            <circle cx="970" cy="598" r="4" fill="#F5F5F5" stroke="#DC2626" strokeWidth="2" />
+            <circle cx="620" cy="578" r="3.5" fill="#F5F5F5" stroke="#DC2626" strokeWidth="1.5" />
+            <circle cx="480" cy="578" r="3.5" fill="#F5F5F5" stroke="#B026FF" strokeWidth="1.5" />
+            <circle cx="30" cy="598" r="4" fill="#F5F5F5" stroke="#7C3AED" strokeWidth="2" />
+            <circle cx="2" cy="570" r="4" fill="#F5F5F5" stroke="#7C3AED" strokeWidth="2" />
+            <circle cx="2" cy="300" r="4" fill="#F5F5F5" stroke="#DC2626" strokeWidth="2" />
           </svg>
         </div>
 
-        {/* Content Card Box */}
-        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center p-4 sm:p-8 rounded-2xl bg-[#0A0A0A]/90">
+        {/* Content Card Box with #111019 Panel and Red-Purple Borders */}
+        <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center p-4 sm:p-8 rounded-2xl bg-[#111019]/95 backdrop-blur-md border border-[rgba(139,92,246,0.25)] shadow-[0_0_35px_rgba(91,33,182,0.2),0_0_15px_rgba(220,38,38,0.1)]">
           
-          {/* Left Column — Hooded Figure Image with Violet Matrix Effect */}
-          <div className="lg:col-span-6 flex justify-center items-center overflow-hidden rounded-xl bg-[#0F0F12] border border-white/5 shadow-2xl">
+          {/* Left Column — Hooded Figure Image with Red-Purple Cyber Lighting & Sweep */}
+          <div className="lg:col-span-6 flex justify-center items-center overflow-hidden rounded-xl bg-[#0D0A12] border border-[rgba(139,92,246,0.22)] shadow-2xl relative group">
+            
+            {/* Gentle Animated Gradient Lighting Behind Image */}
+            <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+              <div className="absolute -top-10 -left-10 w-64 h-64 bg-[#DC2626]/20 rounded-full blur-3xl animate-cyber-ambient-glow" />
+              <div
+                className="absolute -bottom-10 -right-10 w-64 h-64 bg-[#7C3AED]/25 rounded-full blur-3xl animate-cyber-ambient-glow"
+                style={{ animationDelay: '-3.5s' }}
+              />
+            </div>
+
+            {/* Main Character Graphic */}
             <img
               src={hoodedHackerImg}
               alt="TRACE-X Security Architecture"
-              className="w-full h-auto object-cover max-h-[500px] rounded-xl transform hover:scale-[1.01] transition-transform duration-500"
+              className="relative z-10 w-full h-auto object-cover max-h-[500px] rounded-xl transform hover:scale-[1.01] transition-transform duration-500 filter contrast-[1.02]"
             />
+
+            {/* Soft Scanning / Light Sweep Effect Across Cyber Frame */}
+            <div className="absolute inset-0 pointer-events-none z-20 overflow-hidden rounded-xl">
+              <div className="w-full h-24 bg-gradient-to-b from-transparent via-[rgba(176,38,255,0.12)] to-transparent animate-cyber-sweep" />
+            </div>
+
+            {/* Subtle Vignette Overlay */}
+            <div className="absolute inset-0 rounded-xl border border-[rgba(139,92,246,0.15)] pointer-events-none z-20 shadow-[inset_0_0_20px_rgba(13,10,18,0.85)]" />
           </div>
 
           {/* Right Column — Form & Authentication controls */}
-          <div className="lg:col-span-6 space-y-5 px-2 sm:px-4">
+          <div className="lg:col-span-6 space-y-5 px-2 sm:px-4 relative z-10">
             
             {/* Header & Subtitle */}
             <div>
-              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-white">
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="w-2 h-2 rounded-full bg-[#EF4444] animate-status-red-purple" />
+                <span className="text-[10px] font-mono tracking-widest text-[#B026FF] uppercase">
+                  CLASSIFIED // RESTRICTED ACCESS
+                </span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-[#F5F5F5]">
                 Log in to your account
               </h1>
-              <p className="text-xs sm:text-sm text-[#9CA3AF] mt-2">
+              <p className="text-xs sm:text-sm text-[#A1A1AA] mt-2">
                 Use your work email to log in to your workplace
               </p>
             </div>
 
             {/* Error or Info Banner */}
             {error && (
-              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg flex items-center space-x-2.5 text-rose-400 text-xs sm:text-sm">
-                <AlertCircle className="w-4 h-4 shrink-0" />
+              <div className="p-3 bg-rose-950/40 border border-[#DC2626]/40 rounded-lg flex items-center space-x-2.5 text-rose-300 text-xs sm:text-sm shadow-[0_0_12px_rgba(220,38,38,0.15)]">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#EF4444]" />
                 <span>{error}</span>
               </div>
             )}
 
             {infoMessage && (
-              <div className="p-3 bg-[#6D4AFF]/10 border border-[#6D4AFF]/20 rounded-lg flex items-center space-x-2.5 text-purple-300 text-xs sm:text-sm">
-                <AlertCircle className="w-4 h-4 shrink-0 text-[#6D4AFF]" />
+              <div className="p-3 bg-[#5B21B6]/20 border border-[rgba(139,92,246,0.3)] rounded-lg flex items-center space-x-2.5 text-purple-200 text-xs sm:text-sm shadow-[0_0_12px_rgba(124,58,237,0.15)]">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#B026FF]" />
                 <span>{infoMessage}</span>
               </div>
             )}
@@ -188,7 +357,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
             <button
               type="button"
               onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center space-x-3 bg-[#141414] hover:bg-[#1A1A1E] border border-white/12 text-white font-medium py-3 px-4 rounded-lg transition-colors cursor-pointer text-sm shadow-sm"
+              className="w-full flex items-center justify-center space-x-3 bg-[#0D0A12] hover:bg-[#16131F] border border-[rgba(139,92,246,0.22)] hover:border-[rgba(139,92,246,0.45)] text-[#F5F5F5] font-medium py-3 px-4 rounded-lg transition-all cursor-pointer text-sm shadow-sm"
             >
               {/* Google Multi-colored SVG G icon */}
               <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
@@ -202,9 +371,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
 
             {/* Divider */}
             <div className="flex items-center my-4">
-              <div className="flex-1 h-[1px] bg-white/12" />
-              <span className="px-3 text-xs text-[#8A8F98] font-normal">Or continue with email</span>
-              <div className="flex-1 h-[1px] bg-white/12" />
+              <div className="flex-1 h-[1px] bg-[rgba(139,92,246,0.2)]" />
+              <span className="px-3 text-xs text-[#A1A1AA] font-normal">Or continue with email</span>
+              <div className="flex-1 h-[1px] bg-[rgba(139,92,246,0.2)]" />
             </div>
 
             {/* Email Form */}
@@ -213,14 +382,17 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
               {/* Email Address Field */}
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium text-[#D1D5DB]">Email address</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="s.t.sharkey@outlook.com"
-                  className="w-full px-3.5 py-2.5 bg-white/[0.03] border border-white/10 rounded-lg text-sm text-[#F2F2F2] placeholder-[#8A8F98] focus:outline-none focus:border-[#6D4AFF] focus:ring-1 focus:ring-[#6D4AFF] transition-all"
-                  required
-                />
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-[#71717A] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="s.t.sharkey@outlook.com"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-[#08070B]/90 border border-[rgba(139,92,246,0.25)] rounded-lg text-sm text-[#F5F5F5] placeholder-[#71717A] focus:outline-none focus:border-[#8B5CF6] focus:ring-1 focus:ring-[#DC2626]/50 focus:shadow-[0_0_12px_rgba(139,92,246,0.2)] transition-all font-sans"
+                    required
+                  />
+                </div>
               </div>
 
               {/* Password Field */}
@@ -230,23 +402,25 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
                   <button
                     type="button"
                     onClick={handleForgotPassword}
-                    className="text-xs text-[#6D4AFF] hover:text-[#7C5CFC] font-medium transition-colors cursor-pointer"
+                    className="text-xs text-[#C026D3] hover:text-[#DC2626] font-medium transition-colors cursor-pointer"
                   >
                     Forgot password?
                   </button>
                 </div>
                 <div className="relative">
+                  <Lock className="w-4 h-4 text-[#71717A] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-3.5 py-2.5 pr-10 bg-white/[0.03] border border-white/10 rounded-lg text-sm text-[#F2F2F2] placeholder-[#8A8F98] focus:outline-none focus:border-[#6D4AFF] focus:ring-1 focus:ring-[#6D4AFF] transition-all"
+                    placeholder="••••••••••••"
+                    className="w-full pl-10 pr-10 py-2.5 bg-[#08070B]/90 border border-[rgba(139,92,246,0.25)] rounded-lg text-sm text-[#F5F5F5] placeholder-[#71717A] focus:outline-none focus:border-[#8B5CF6] focus:ring-1 focus:ring-[#DC2626]/50 focus:shadow-[0_0_12px_rgba(139,92,246,0.2)] transition-all font-sans"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8A8F98] hover:text-[#D1D5DB] transition-colors p-1"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#A1A1AA] hover:text-[#F5F5F5] transition-colors p-1 cursor-pointer"
                     title={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -256,31 +430,50 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
 
               {/* Mobile Quick Preset Row */}
               <div className="sm:hidden flex items-center justify-between pt-1">
-                <span className="text-[11px] text-[#8A8F98]">Presets:</span>
+                <span className="text-[11px] text-[#A1A1AA]">Presets:</span>
                 <div className="flex space-x-1 text-[11px]">
-                  <button type="button" onClick={() => selectPreset('admin@tracex.gov.in', 'AdminPass123!')} className="px-2 py-0.5 bg-[#141414] border border-white/10 rounded text-[#6D4AFF]">Admin</button>
-                  <button type="button" onClick={() => selectPreset('priya.verma@tracex.gov.in', 'Investigator123!')} className="px-2 py-0.5 bg-[#141414] border border-white/10 rounded text-[#6D4AFF]">Investigator</button>
-                  <button type="button" onClick={() => selectPreset('amit.patel@tracex.gov.in', 'Analyst123!')} className="px-2 py-0.5 bg-[#141414] border border-white/10 rounded text-[#6D4AFF]">Analyst</button>
+                  <button
+                    type="button"
+                    onClick={() => selectPreset('admin@tracex.gov.in', 'AdminPass123!')}
+                    className="px-2 py-0.5 bg-[#0D0A12] border border-[rgba(139,92,246,0.2)] rounded text-[#B026FF]"
+                  >
+                    Admin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectPreset('priya.verma@tracex.gov.in', 'Investigator123!')}
+                    className="px-2 py-0.5 bg-[#0D0A12] border border-[rgba(139,92,246,0.2)] rounded text-[#B026FF]"
+                  >
+                    Investigator
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectPreset('amit.patel@tracex.gov.in', 'Analyst123!')}
+                    className="px-2 py-0.5 bg-[#0D0A12] border border-[rgba(139,92,246,0.2)] rounded text-[#B026FF]"
+                  >
+                    Analyst
+                  </button>
                 </div>
               </div>
 
-              {/* Primary Log In Button */}
+              {/* Primary Log In Button with Red -> Purple Gradient & Ambient Pulse */}
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 bg-[#6D4AFF] hover:bg-[#7C5CFC] text-white text-sm font-semibold rounded-lg transition-all shadow-lg shadow-[#6D4AFF]/20 cursor-pointer disabled:opacity-50 mt-2"
+                className="w-full py-3 bg-gradient-to-r from-[#DC2626] via-[#B026FF] to-[#7C3AED] hover:from-[#EF4444] hover:via-[#C026D3] hover:to-[#8B5CF6] text-white text-sm font-semibold rounded-lg transition-all shadow-lg animate-btn-pulse cursor-pointer disabled:opacity-50 mt-2 flex items-center justify-center space-x-2"
               >
-                {loading ? 'Authenticating...' : 'Log in'}
+                <span>{loading ? 'Authenticating...' : 'Log in'}</span>
+                {!loading && <span>&rarr;</span>}
               </button>
             </form>
 
             {/* Signup Footer Link */}
-            <p className="text-center text-xs text-[#8A8F98] pt-2">
+            <p className="text-center text-xs text-[#A1A1AA] pt-2">
               Don't have an account yet?{' '}
               <button
                 type="button"
                 onClick={handleSignUp}
-                className="text-[#6D4AFF] hover:text-[#7C5CFC] font-medium transition-colors cursor-pointer ml-1"
+                className="text-[#C026D3] hover:text-[#DC2626] font-medium transition-colors cursor-pointer ml-1"
               >
                 Sign up
               </button>
@@ -291,7 +484,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess }) => {
       </div>
 
       {/* Footer */}
-      <div className="w-full max-w-6xl mx-auto text-center pt-6 pb-2 text-[11px] text-[#8A8F98]">
+      <div className="w-full max-w-6xl mx-auto text-center pt-6 pb-2 text-[11px] text-[#A1A1AA] relative z-10">
         TRACE-X Forensic & Criminal Intelligence Platform &copy; 2026. Restricted Access.
       </div>
     </div>

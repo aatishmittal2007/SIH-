@@ -1,0 +1,19 @@
+entity_id,type,value,description
+ENT-001,PERSON,Arjun Mehta,Synthetic subject
+ENT-002,PERSON,Maya Rao,Synthetic subject
+ENT-003,PERSON,Vikram Sen,Synthetic subject
+ENT-004,ORGANIZATION,Orion Logistics,Synthetic organization
+ENT-005,ORGANIZATION,Nova Freight Systems,Synthetic organization
+ENT-006,PHONE,+91-90000-10001,Synthetic phone
+ENT-007,PHONE,+91-90000-10002,Synthetic phone
+ENT-008,EMAIL,arjun.demo@example.test,Synthetic email
+ENT-009,EMAIL,maya.demo@example.test,Synthetic email
+ENT-010,ACCOUNT,ACCT-DEMO-7712,Synthetic account
+ENT-011,ACCOUNT,ACCT-DEMO-8841,Synthetic account
+ENT-012,DEVICE,DEV-DEMO-441,Synthetic device
+ENT-013,DEVICE,DEV-DEMO-552,Synthetic device
+ENT-014,LOCATION,Bengaluru,Synthetic location
+ENT-015,LOCATION,Hyderabad,Synthetic location
+ENT-016,LOCATION,Mumbai,Synthetic location
+ENT-017,DOMAIN,shadow-demo.example.test,Synthetic domain
+ENT-018,USERNAME,arjun_demo_x,Synthetic username

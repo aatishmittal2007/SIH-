@@ -1,0 +1,4 @@
+alert_id,case_id,severity,type,message,status
+ALT-001,CASE-001,HIGH,CROSS_CASE_CORRELATION,Recurring synthetic phone/device identifiers detected across authorized investigations,OPEN
+ALT-002,CASE-003,MEDIUM,CONTRADICTION,Conflicting synthetic location claims detected,OPEN
+ALT-003,CASE-002,MEDIUM,ENTITY_RESOLUTION,High-confidence synthetic entity-resolution candidate requires review,OPEN

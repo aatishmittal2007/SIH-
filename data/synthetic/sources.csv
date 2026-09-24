@@ -1,0 +1,10 @@
+source_id,case_id,source_type,title,source_reference
+SRC-001,CASE-001,Synthetic Report,Shadow Net Report,DEMO-SOURCE-001
+SRC-002,CASE-001,Synthetic Digital Log,Device Log 441,DEMO-SOURCE-002
+SRC-003,CASE-001,Synthetic Financial Record,Account Activity 7712,DEMO-SOURCE-003
+SRC-004,CASE-002,Synthetic CDR,CDR Demo 10001,DEMO-SOURCE-004
+SRC-005,CASE-002,Synthetic Report,Red Circuit Report,DEMO-SOURCE-005
+SRC-006,CASE-002,Synthetic Digital Log,Shared Device 441,DEMO-SOURCE-006
+SRC-007,CASE-003,Synthetic Report,Night Relay Report,DEMO-SOURCE-007
+SRC-008,CASE-003,Synthetic Surveillance Note,Location Note,DEMO-SOURCE-008
+SRC-009,CASE-003,Synthetic Financial Record,Account Activity 7712 Case 3,DEMO-SOURCE-009

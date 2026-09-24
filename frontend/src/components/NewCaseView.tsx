@@ -65,11 +65,16 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
         formData.append('caseId', newCase.id);
         formData.append('sourceId', selectedSourceId);
         formData.append('title', evidenceTitle || 'Initial Case Evidence');
-        formData.append('type', evidenceType);
+        const typeMapping: Record<string, string> = {
+          CDR: 'LOG',
+          IP_LOG: 'LOG',
+          BANK_STATEMENT: 'TRANSACTION',
+          CHAT_EXPORT: 'DOCUMENT',
+        };
+        const validEvidenceType = typeMapping[evidenceType] || evidenceType;
+        formData.append('type', validEvidenceType);
 
-        await apiClient.post('/evidence/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        await apiClient.post('/evidence/upload', formData);
       }
 
       onCaseCreated(newCase.id);
@@ -94,28 +99,28 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
         </button>
 
         <div className="flex items-center space-x-2 text-xs font-mono text-slate-400">
-          <span className="w-2 h-2 rounded-full bg-[#6D4AFF]"></span>
-          <span>CASE INTAKE PORTAL</span>
+          <span className="w-2 h-2 rounded-full bg-[#EF4444] animate-status-red-purple"></span>
+          <span className="text-[#B026FF] font-semibold">CASE INTAKE PORTAL</span>
         </div>
       </div>
 
       {/* Main Container */}
-      <div className="bg-[#111114] border border-[#1f1f28] rounded-2xl p-6 md:p-8 shadow-xl space-y-6">
-        <div className="flex items-center space-x-4 border-b border-[#1f1f28] pb-6">
-          <div className="p-3 bg-[#6D4AFF]/20 border border-[#6D4AFF]/40 text-[#6D4AFF] rounded-2xl">
+      <div className="tx-panel corner-bracket-full p-6 md:p-8 shadow-2xl space-y-6">
+        <div className="flex items-center space-x-4 border-b border-white/[0.08] pb-6">
+          <div className="p-3 bg-gradient-to-br from-[#DC2626]/20 to-[#7C3AED]/20 border border-[rgba(139,92,246,0.35)] text-[#B026FF] rounded-2xl shadow-lg shadow-[#DC2626]/10">
             <FolderPlus className="w-8 h-8" />
           </div>
           <div>
             <h1 className="text-2xl font-extrabold text-slate-100 tracking-tight">INITIALIZE NEW INVESTIGATION CASE</h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Create an official case dossier, register initial evidence, and initialize entity analysis graph node.
+            <p className="text-xs text-slate-400 mt-1 font-mono">
+              Create official case dossier, register initial evidence, and initialize entity analysis graph node.
             </p>
           </div>
         </div>
 
         {error && (
-          <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 text-xs font-mono flex items-center space-x-2">
-            <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400" />
+          <div className="p-4 bg-[#DC2626]/10 border border-[#DC2626]/30 rounded-xl text-[#EF4444] text-xs font-mono flex items-center space-x-2">
+            <ShieldAlert className="w-4 h-4 shrink-0 text-[#EF4444]" />
             <span>{error}</span>
           </div>
         )}
@@ -123,8 +128,8 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Section 1: Case Details */}
           <div className="space-y-4">
-            <h2 className="text-xs font-mono font-bold text-[#6D4AFF] uppercase tracking-wider flex items-center space-x-2">
-              <FileText className="w-4 h-4 text-[#6D4AFF]" />
+            <h2 className="text-xs font-mono font-bold text-[#B026FF] uppercase tracking-wider flex items-center space-x-2">
+              <FileText className="w-4 h-4 text-[#B026FF]" />
               <span>1. PRIMARY DOSSIER DETAILS</span>
             </h2>
 
@@ -136,7 +141,7 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
                   required
                   value={caseNumber}
                   onChange={(e) => setCaseNumber(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#0a0a0c] border border-[#262633] rounded-xl text-xs font-mono text-slate-100 focus:outline-none focus:border-[#6D4AFF]"
+                  className="tx-input w-full px-3.5 py-2.5 text-xs font-mono"
                 />
               </div>
 
@@ -145,7 +150,7 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
                 <select
                   value={priority}
                   onChange={(e) => setPriority(e.target.value as any)}
-                  className="w-full px-3.5 py-2.5 bg-[#0a0a0c] border border-[#262633] rounded-xl text-xs text-slate-100 focus:outline-none focus:border-[#6D4AFF]"
+                  className="tx-input w-full px-3.5 py-2.5 text-xs"
                 >
                   <option value="LOW">LOW PRIORITY</option>
                   <option value="MEDIUM">MEDIUM PRIORITY</option>
@@ -162,7 +167,7 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
                   placeholder="e.g. Operation Shadow: Cross-Border Financial Syndicate Investigation"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#0a0a0c] border border-[#262633] rounded-xl text-xs text-slate-100 focus:outline-none focus:border-[#6D4AFF]"
+                  className="tx-input w-full px-3.5 py-2.5 text-xs"
                 />
               </div>
 
@@ -173,16 +178,16 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
                   placeholder="Detailed breakdown of intelligence reports, target suspects, jurisdiction notes..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#0a0a0c] border border-[#262633] rounded-xl text-xs text-slate-100 focus:outline-none focus:border-[#6D4AFF]"
+                  className="tx-input w-full px-3.5 py-2.5 text-xs"
                 />
               </div>
             </div>
           </div>
 
           {/* Section 2: Initial Evidence Registration */}
-          <div className="space-y-4 pt-4 border-t border-[#1f1f28]">
-            <h2 className="text-xs font-mono font-bold text-[#6D4AFF] uppercase tracking-wider flex items-center space-x-2">
-              <Upload className="w-4 h-4 text-[#6D4AFF]" />
+          <div className="space-y-4 pt-4 border-t border-white/[0.08]">
+            <h2 className="text-xs font-mono font-bold text-[#B026FF] uppercase tracking-wider flex items-center space-x-2">
+              <Upload className="w-4 h-4 text-[#B026FF]" />
               <span>2. INITIAL EVIDENCE FILE ATTACHMENT (OPTIONAL)</span>
             </h2>
 
@@ -194,7 +199,7 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
                   placeholder="e.g. Target Alpha CDR Extract"
                   value={evidenceTitle}
                   onChange={(e) => setEvidenceTitle(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#0a0a0c] border border-[#262633] rounded-xl text-xs text-slate-100 focus:outline-none focus:border-[#6D4AFF]"
+                  className="tx-input w-full px-3.5 py-2.5 text-xs"
                 />
               </div>
 
@@ -203,15 +208,16 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
                 <select
                   value={evidenceType}
                   onChange={(e) => setEvidenceType(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#0a0a0c] border border-[#262633] rounded-xl text-xs text-slate-100 focus:outline-none focus:border-[#6D4AFF]"
+                  className="tx-input w-full px-3.5 py-2.5 text-xs"
                 >
-                  <option value="CDR">CDR Log</option>
-                  <option value="BANK_STATEMENT">Bank Statement</option>
-                  <option value="CHAT_EXPORT">Chat Export</option>
-                  <option value="IP_LOG">IP Log</option>
-                  <option value="IMAGE">Image</option>
+                  <option value="LOG">Call Detail Records (CDR) / System Logs</option>
+                  <option value="DOCUMENT">Official Document / Chat Export</option>
+                  <option value="TRANSACTION">Bank Statement / Transaction</option>
+                  <option value="REPORT">Intelligence Report</option>
+                  <option value="IMAGE">Image Evidence</option>
                   <option value="AUDIO">Audio Intercept</option>
-                  <option value="DOCUMENT">Official Document</option>
+                  <option value="VIDEO">Video Surveillance</option>
+                  <option value="OTHER">Other Evidence</option>
                 </select>
               </div>
 
@@ -220,7 +226,7 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
                 <select
                   value={selectedSourceId}
                   onChange={(e) => setSelectedSourceId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#0a0a0c] border border-[#262633] rounded-xl text-xs text-slate-100 focus:outline-none focus:border-[#6D4AFF]"
+                  className="tx-input w-full px-3.5 py-2.5 text-xs"
                 >
                   {sources.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -235,25 +241,25 @@ export const NewCaseView: React.FC<NewCaseViewProps> = ({ onCaseCreated, onCance
                 <input
                   type="file"
                   onChange={(e) => setEvidenceFile(e.target.files?.[0] || null)}
-                  className="w-full px-3 py-2 bg-[#0a0a0c] border border-[#262633] rounded-xl text-xs text-slate-300 focus:outline-none"
+                  className="tx-input w-full px-3 py-2 text-xs text-slate-300 cursor-pointer"
                 />
               </div>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end space-x-3 pt-6 border-t border-[#1f1f28]">
+          <div className="flex items-center justify-end space-x-3 pt-6 border-t border-white/[0.08]">
             <button
               type="button"
               onClick={onCancel}
-              className="px-5 py-2.5 bg-[#17171f] hover:bg-[#20202b] text-slate-300 border border-[#262633] rounded-xl text-xs font-semibold transition cursor-pointer"
+              className="tx-btn-secondary px-5 py-2.5 text-xs font-semibold cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="flex items-center space-x-2 px-6 py-2.5 bg-[#6D4AFF] hover:bg-[#7C5CFC] text-white rounded-xl text-xs font-semibold shadow-lg shadow-[#6D4AFF]/30 transition cursor-pointer disabled:opacity-50"
+              className="tx-btn-primary flex items-center space-x-2 px-6 py-2.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
             >
               <Sparkles className="w-4 h-4" />
               <span>{loading ? 'Creating Dossier...' : 'CREATE INVESTIGATION DOSSIER'}</span>

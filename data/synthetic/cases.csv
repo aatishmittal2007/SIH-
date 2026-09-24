@@ -1,0 +1,4 @@
+case_id,title,description,priority,status,created_at
+CASE-001,Operation Shadow Net,Synthetic investigation involving recurring digital and financial identifiers.,HIGH,OPEN,2026-08-10T09:30:00Z
+CASE-002,Operation Red Circuit,Synthetic investigation involving recurring identifiers across cases.,MEDIUM,OPEN,2026-08-18T11:15:00Z
+CASE-003,Operation Night Relay,Synthetic investigation containing temporal overlap and conflicting location claims.,HIGH,OPEN,2026-08-25T14:20:00Z

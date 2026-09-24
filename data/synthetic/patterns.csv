@@ -1,0 +1,4 @@
+pattern_id,case_id,pattern_type,description,severity,entity_ids
+PAT-001,CASE-001,CROSS_CASE_RECURRENCE,Repeated phone/device identifiers across authorized cases,HIGH,ENT-006;ENT-012
+PAT-002,CASE-003,TEMPORAL_BURST,Multiple location claims within a 15-minute interval,MEDIUM,ENT-002
+PAT-003,CASE-002,ENTITY_RECURRENCE,Recurring identifier across evidence items,MEDIUM,ENT-006

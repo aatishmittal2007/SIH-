@@ -1,0 +1,4 @@
+match_id,case_id,source_entity_id,candidate_entity_id,entity_type,score,signals,status
+MATCH-001,CASE-002,ENT-001,ENT-001,PERSON,0.94,Name and shared phone context,PENDING
+MATCH-002,CASE-003,ENT-002,ENT-002,PERSON,0.96,Name and email context,CONFIRMED
+MATCH-003,CASE-002,ENT-012,ENT-012,DEVICE,0.99,Exact synthetic device identifier,CONFIRMED

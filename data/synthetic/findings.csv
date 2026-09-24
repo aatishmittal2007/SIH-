@@ -1,0 +1,3 @@
+finding_id,case_id,type,summary,confidence,supporting_reference,limitations
+FND-001,CASE-001,CROSS_CASE_SIGNAL,Repeated synthetic identifiers suggest a cross-case relationship requiring review,0.91,CORR-001,Analytical candidate; not proof of wrongdoing
+FND-002,CASE-003,CONTRADICTION_SIGNAL,Conflicting synthetic location claims occur within a short time window,0.84,CON-001,Requires source validation and investigator review

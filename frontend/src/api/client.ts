@@ -7,7 +7,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api/
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -15,27 +15,26 @@ export const apiClient = axios.create({
 
 // ---------------------------------------------------------------------------
 // Request interceptor — attach JWT from localStorage on every request
+// For multipart/form-data, remove Content-Type so browser sets boundary.
 // ---------------------------------------------------------------------------
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('tracex_jwt_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  if (config.data instanceof FormData) {
+    // Let browser set multipart/form-data with correct boundary
+    delete config.headers['Content-Type'];
+  }
   return config;
 });
 
 // ---------------------------------------------------------------------------
-// Response interceptor — unwrap {success, data} envelope from auth routes
-// Some controllers (auth, entity-resolution, network, temporal, geospatial)
-// return {success: true, data: ...}. Others return data directly.
-// We normalise only when success+data envelope is present so that components
-// that already read res.data.data keep working and components that read
-// res.data for direct returns also keep working.
+// Response interceptor — centralised error handling
 // ---------------------------------------------------------------------------
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    // Pull a user-friendly message from the backend error shape
     const data = error.response?.data as Record<string, any> | undefined;
     const message =
       data?.error?.message ??
@@ -44,13 +43,10 @@ apiClient.interceptors.response.use(
       error.message ??
       'An unexpected error occurred';
 
-    // Attach normalised message so components can use err.userMessage
     (error as any).userMessage = message;
 
-    // On 401 clear the stored token so the login modal re-appears
     if (error.response?.status === 401) {
       localStorage.removeItem('tracex_jwt_token');
-      // Emit an event so App can react without a hard coupling
       window.dispatchEvent(new CustomEvent('tracex:unauthorized'));
     }
 
@@ -59,8 +55,8 @@ apiClient.interceptors.response.use(
 );
 
 // ---------------------------------------------------------------------------
-// Helper — extract data from the {success, data} envelope used by auth routes.
-// Use this when the backend explicitly wraps: { success: true, data: ... }
+// unwrapData — extract payload from { success, data } envelope.
+// IMPORTANT: Always pass res.data (the response body), NOT the axios response.
 // ---------------------------------------------------------------------------
 export function unwrapData<T>(responseData: any): T {
   if (
@@ -72,4 +68,30 @@ export function unwrapData<T>(responseData: any): T {
     return responseData.data as T;
   }
   return responseData as T;
+}
+
+// ---------------------------------------------------------------------------
+// safeArray — safely extract an array from any backend response shape.
+// Handles: direct array, {success,data:[]}, {data:[]}, {items:[]},
+//          {results:[]}, or any caller-supplied key names.
+// ALWAYS pass res.data (the response body), not the axios response object.
+// ---------------------------------------------------------------------------
+export function safeArray<T>(responseData: any, ...extraKeys: string[]): T[] {
+  if (Array.isArray(responseData)) return responseData as T[];
+
+  const unwrapped = unwrapData<any>(responseData);
+  if (Array.isArray(unwrapped)) return unwrapped as T[];
+
+  for (const key of extraKeys) {
+    if (Array.isArray(responseData?.[key])) return responseData[key] as T[];
+    if (Array.isArray(unwrapped?.[key])) return unwrapped[key] as T[];
+  }
+
+  const commonKeys = ['items', 'results', 'records'];
+  for (const key of commonKeys) {
+    if (Array.isArray(responseData?.[key])) return responseData[key] as T[];
+    if (Array.isArray(unwrapped?.[key])) return unwrapped[key] as T[];
+  }
+
+  return [];
 }
